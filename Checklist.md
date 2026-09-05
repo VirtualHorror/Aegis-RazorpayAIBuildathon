@@ -643,21 +643,21 @@ All arithmetic in integer paise with `Math.ceil` toward the merchant; unit tests
 
 ---
 
-### Task 17: Web shell — design system, navigation, theme, footer, API client, SSE hook, GlowInput — **UNLOCKED 2026-09-06 (Sprint 3: T17–T22 built by Claude as Lead Frontend Developer)**
+### Task 17: Web shell — design system, navigation, theme, footer, API client, SSE hook, GlowInput — **DONE by Claude (2026-09-06; Sprint 3: T17–T22 built by Claude as Lead Frontend Developer, D-062)**
 
 **Goal.** The dashboard skeleton every page task builds on. Read `Design.md` §1–3, 5.3, 7, 8 first.
 
 **Files.** In `apps/web/src`: `app/globals.css` (Tailwind 4 `@theme` tokens from `Design.md §2`, light + `.dark`), `app/layout.tsx` (fonts via `next/font` Geist Sans/Mono, `ThemeProvider`, `AppShell`, footer — keep the existing footer text), `components/shell/{AppShell,Sidebar,TopBar,ThemeToggle,EnvPill,LlmPill,KillSwitchPill}.tsx`, `components/ui/{Card,Badge,Button,Table,Drawer,Toast,KpiTile,JsonView,GlowInput,EmptyState,Skeleton}.tsx`, `lib/api.ts` (typed fetch wrapper around `NEXT_PUBLIC_API_URL`, error shape), `lib/sse.ts` (`useEventStream(names[]) → { events, status }` with reconnect/backoff), `lib/format.ts` (`formatInr(paise)`, `relativeTime`, `maskId`), `lib/types.ts` (import from `@aegis/shared`).
 
 **Steps.**
-- [ ] 17.1 Tokens + typography + dark/light verified with the toggle; `color-scheme` meta switches.
-- [ ] 17.2 Shell responsive breakpoints: sidebar 240px ≥ 1024, icon rail ≥ 640, bottom bar < 640. Active route highlight. Footer at the bottom of the scroll container on every route (`app/layout.tsx`).
-- [ ] 17.3 `TopBar` pills read `GET /api/v1/system` (provider/model, env) and `GET /api/v1/guardrails` (kill switch) and subscribe to `system.kill_switch`.
-- [ ] 17.4 `GlowInput` exactly per `Design.md §5.3` (conic gradient halo with animated `--a`, focus intensifies, `Tab` fills the example, Enter submits, loading state).
-- [ ] 17.5 `useEventStream`: `EventSource` to `/api/v1/stream`, parse `event:` names, keep last 200, reconnect with backoff 1→10 s, expose `status: 'connecting'|'live'|'reconnecting'`.
-- [ ] 17.6 Placeholder routes for every page in `Design.md §4` rendering `EmptyState` (so navigation works end-to-end); a `/kitchen-sink` dev route showing every UI component in both themes (excluded from nav).
-- [ ] 17.7 `pnpm --filter @aegis/web build` green; ESLint green.
-- [ ] 17.8 Commit `feat(t17): web shell and design system`.
+- [x] 17.1 Tokens + typography + dark/light verified with the toggle; `color-scheme` meta switches.
+- [x] 17.2 Shell responsive breakpoints: sidebar 240px ≥ 1024, icon rail ≥ 640, bottom bar < 640. Active route highlight. Footer at the bottom of the scroll container on every route (`app/layout.tsx`).
+- [x] 17.3 `TopBar` pills read `GET /api/v1/system` (provider/model, env) and `GET /api/v1/guardrails` (kill switch) and subscribe to `system.kill_switch`.
+- [x] 17.4 `GlowInput` exactly per `Design.md §5.3` (conic gradient halo with animated `--a`, focus intensifies, `Tab` fills the example, Enter submits, loading state).
+- [x] 17.5 `useEventStream`: `EventSource` to `/api/v1/stream`, parse `event:` names, keep last 200, reconnect with backoff 1→10 s, expose `status: 'connecting'|'live'|'reconnecting'`.
+- [x] 17.6 Placeholder routes for every page in `Design.md §4` rendering `EmptyState` (so navigation works end-to-end); a `/kitchen-sink` dev route showing every UI component in both themes (excluded from nav).
+- [x] 17.7 `pnpm --filter @aegis/web build` green; ESLint green.
+- [x] 17.8 Commit `feat(t17): web shell and design system`.
 
 **Verify/Docs.** `TestChecklist.md §T17–T22`; `Bug-Feature.md` F-019; `Design.md` (record any token changes).
 

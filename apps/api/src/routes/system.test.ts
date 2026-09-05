@@ -16,12 +16,14 @@ describe('GET /api/v1/system', () => {
         provider: 'stub',
         describe: () => ({ provider: 'stub', model: 'fixture-v1', modelFast: 'fixture-v1' }),
       },
+      env: 'test',
+      version: '0.1.0',
     });
 
     const response = await app.inject({ method: 'GET', url: '/api/v1/system' });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ provider: 'stub', model: 'fixture-v1', modelFast: 'fixture-v1' });
+    expect(response.json()).toEqual({ provider: 'stub', model: 'fixture-v1', modelFast: 'fixture-v1', env: 'test', version: '0.1.0', simulated: true });
   });
 
   it('has a safe empty-model fallback for a minimal client', async () => {
@@ -30,6 +32,6 @@ describe('GET /api/v1/system', () => {
 
     const response = await app.inject({ method: 'GET', url: '/api/v1/system' });
 
-    expect(response.json()).toEqual({ provider: 'test', model: '', modelFast: '' });
+    expect(response.json()).toEqual({ provider: 'test', model: '', modelFast: '', env: 'development', version: '', simulated: true });
   });
 });

@@ -76,7 +76,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   await app.register(healthRoutes, { probeDb: deps.probeDb, version: AEGIS_VERSION });
   const llm = deps.llm ?? createLlmClient(config, app.log);
-  await app.register(systemRoutes, { llm });
+  await app.register(systemRoutes, { llm, env: config.NODE_ENV, version: AEGIS_VERSION });
   if (deps.db) {
     await app.register(askRoutes, { db: deps.db, readonlyDb: deps.readonlyDb, llm });
     await app.register(complianceRoutes, { db: deps.db });

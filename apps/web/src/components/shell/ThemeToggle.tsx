@@ -2,12 +2,13 @@
 
 import { useTheme } from "next-themes";
 import { useSyncExternalStore } from "react";
+import { Icon, type IconName } from "@/components/ui/icons";
 
-const OPTIONS = [
-  { value: "system", label: "System" },
-  { value: "light", label: "Light" },
-  { value: "dark", label: "Dark" },
-] as const;
+const OPTIONS: readonly { value: "system" | "light" | "dark"; label: string; icon: IconName }[] = [
+  { value: "system", label: "System", icon: "monitor" },
+  { value: "light", label: "Light", icon: "sun" },
+  { value: "dark", label: "Dark", icon: "moon" },
+];
 
 // Intent: the server cannot know the persisted theme, so the active state is only shown after hydration.
 // useSyncExternalStore (server snapshot false, client snapshot true) avoids a setState-in-effect and any mismatch.
@@ -16,17 +17,13 @@ function useHydrated(): boolean {
   return useSyncExternalStore(subscribeNoop, () => true, () => false);
 }
 
-/** Three-state theme control (Design.md §7). */
+/** Three-state segmented control (Design.md §7); icon-only below `sm`. */
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme();
   const hydrated = useHydrated();
 
   return (
-    <div
-      role="radiogroup"
-      aria-label="Colour theme"
-      className="inline-flex items-center rounded-full border border-border bg-surface p-0.5 text-xs font-medium"
-    >
+    <div role="radiogroup" aria-label="Colour theme" className="inline-flex items-center rounded-full border border-border bg-surface p-0.5 text-xs font-medium">
       {OPTIONS.map((option) => {
         const active = hydrated && (theme ?? "system") === option.value;
         return (
@@ -35,13 +32,13 @@ export function ThemeToggle() {
             type="button"
             role="radio"
             aria-checked={active}
+            aria-label={option.label}
+            title={option.label}
             onClick={() => setTheme(option.value)}
-            className={
-              "rounded-full px-3 py-1 transition-colors " +
-              (active ? "bg-accent text-white" : "text-fg-muted hover:text-fg")
-            }
+            className={`flex h-7 items-center gap-1 rounded-full px-2 transition-colors ${active ? "bg-accent text-white" : "text-fg-muted hover:text-fg"}`}
           >
-            {option.label}
+            <Icon name={option.icon} size={14} />
+            <span className="hidden sm:inline">{option.label}</span>
           </button>
         );
       })}

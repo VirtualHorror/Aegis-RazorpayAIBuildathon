@@ -3,8 +3,13 @@
 /* Class-based dark mode: next-themes toggles `.dark` on <html> (system preference by default). */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Design tokens — see Design.md §2. Light values on :root, dark values under .dark. */
-:root {
+/*
+ * Design tokens — Design.md §2. Light values on :root (and on `.light`, so a subtree can be forced light inside a dark
+ * page, e.g. the kitchen sink), dark values under `.dark`. Components consume tokens only, never `dark:` utilities, so
+ * a forced-theme wrapper renders correctly.
+ */
+:root,
+.light {
   --bg: #f6f7fb;
   --surface: #ffffff;
   --surface-2: #eef0f6;
@@ -15,6 +20,10 @@
   --ok: #0f9d58;
   --warn: #d97706;
   --danger: #dc2626;
+  --card-highlight: none;
+  --glow-opacity: 0.125;
+  --glow-focus-opacity: 0.28;
+  --glow-saturate: 0.8;
   color-scheme: light;
 }
 
@@ -29,7 +38,22 @@
   --ok: #31c48d;
   --warn: #f5a524;
   --danger: #f87171;
+  --card-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  --glow-opacity: 0.25;
+  --glow-focus-opacity: 0.55;
+  --glow-saturate: 1;
   color-scheme: dark;
+}
+
+/* Module spectrum — the prism fan (Design.md §2). Same in both themes; used as rails, badges and the prism colours. */
+:root {
+  --mod-checkout_recovery: #ff4d4d;
+  --mod-subscription_salvager: #ffb020;
+  --mod-b2b_negotiator: #3ddc84;
+  --mod-chargeback_evidence: #3b82f6;
+  --mod-x402: #a855f7;
+  --mod-compliance: #22d3ee;
+  --mod-nlq: #f472b6;
 }
 
 @theme inline {
@@ -43,18 +67,203 @@
   --color-ok: var(--ok);
   --color-warn: var(--warn);
   --color-danger: var(--danger);
+  --color-mod-checkout: var(--mod-checkout_recovery);
+  --color-mod-salvage: var(--mod-subscription_salvager);
+  --color-mod-negotiate: var(--mod-b2b_negotiator);
+  --color-mod-evidence: var(--mod-chargeback_evidence);
+  --color-mod-x402: var(--mod-x402);
+  --color-mod-compliance: var(--mod-compliance);
+  --color-mod-nlq: var(--mod-nlq);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
+html {
+  height: 100%;
+}
+
 body {
+  min-height: 100%;
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
+/* Visible focus for every interactive element, in both themes (C-F6). */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+  border-radius: 6px;
+}
+
+::selection {
+  background: color-mix(in oklab, var(--accent) 30%, transparent);
+}
+
+/* Cards: hairline, no drop shadow in light mode, a faint inner highlight in dark mode (Design.md §2). */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  box-shadow: var(--card-highlight);
+}
+
+/* Module rail: a 3px left bar in the module colour. Set `--rail` on the element. */
+.rail {
+  box-shadow: inset 3px 0 0 0 var(--rail, var(--border));
+}
+
+/* Live feed rows: slide in and flash the module colour rail once (Design.md §6). */
+@keyframes row-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes rail-flash {
+  0% {
+    box-shadow: inset 3px 0 0 0 var(--rail, var(--accent)), inset 0 0 0 999px color-mix(in oklab, var(--rail, var(--accent)) 18%, transparent);
+  }
+  100% {
+    box-shadow: inset 3px 0 0 0 var(--rail, var(--accent)), inset 0 0 0 999px transparent;
+  }
+}
+.row-enter {
+  animation: row-enter 240ms ease-out both, rail-flash 900ms ease-out both;
+}
+
+/* KPI value flash when a live event increments it. */
+@keyframes kpi-flash {
+  0% {
+    color: var(--accent);
+  }
+  100% {
+    color: inherit;
+  }
+}
+.kpi-flash {
+  animation: kpi-flash 900ms ease-out both;
+}
+
+/* GlowInput halo — Design.md §5.3. Animated conic angle via a registered custom property. */
+@property --a {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+@keyframes glow-spin {
+  to {
+    --a: 360deg;
+  }
+}
+@keyframes glow-pulse {
+  0%,
+  100% {
+    opacity: var(--glow-focus-opacity);
+  }
+  50% {
+    opacity: calc(var(--glow-focus-opacity) * 0.55);
+  }
+}
+.glow-halo {
+  position: absolute;
+  inset: -4px;
+  border-radius: 18px;
+  pointer-events: none;
+  opacity: var(--glow-opacity);
+  filter: blur(28px) saturate(var(--glow-saturate));
+  background: conic-gradient(from var(--a), #34d399, #22d3ee, #818cf8, #e879f9, #fbbf24, #34d399);
+  animation: glow-spin 14s linear infinite;
+  transition: opacity 200ms ease-out;
+}
+.glow-halo.is-focused {
+  opacity: var(--glow-focus-opacity);
+  animation-duration: 4.66s;
+}
+.glow-halo.is-loading {
+  animation: glow-spin 4.66s linear infinite, glow-pulse 1.2s ease-in-out infinite;
+}
+
+/* Skeleton shimmer. */
+@keyframes shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+.skeleton {
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface-2) 25%, color-mix(in oklab, var(--surface-2) 60%, var(--surface)) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+/* Spinner. */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin {
+  animation: spin 900ms linear infinite;
+}
+
+/* JSON / SQL colouring (JsonView, SqlBlock). */
+.tok-key {
+  color: var(--accent);
+}
+.tok-str {
+  color: var(--ok);
+}
+.tok-num {
+  color: var(--warn);
+}
+.tok-bool,
+.tok-null {
+  color: var(--mod-x402);
+}
+.tok-kw {
+  color: var(--accent);
+  font-weight: 600;
+}
+.tok-fn {
+  color: var(--mod-compliance);
+}
+.tok-cmt {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+/* Thin scrollbars inside scroll containers. */
+.scroll-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* Reduced motion: every continuous animation stops; micro-interactions keep their end state (C-F4, Design.md §6). */
+@media (prefers-reduced-motion: reduce) {
+  .glow-halo,
+  .glow-halo.is-focused,
+  .glow-halo.is-loading,
+  .skeleton,
+  .spin,
+  .row-enter,
+  .kpi-flash {
+    animation: none !important;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 1ms !important;
+  }
 }

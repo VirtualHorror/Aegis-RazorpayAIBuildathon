@@ -158,9 +158,11 @@ POST /api/v1/ask {question}
 
 `POST /api/v1/compliance/scan` → enqueue `compliance_scan` job → `scanner.run()`: for each active product: `keywordHits = prescreen(description)` → `assessment = llm.completeJson(classify_compliance)` (fast tier, description only) → `verifyEvidenceSpan(assessment, description)` (must be a case-sensitive substring; else `status='needs_review'`) → upsert `compliance_flags` (one per product/run) → run row updated → `bus.publish('compliance.flag')`. Model outages produce medium-risk keyword-only flags with `degraded_count` incremented; the six-hour cron is opt-in via `AEGIS_COMPLIANCE_CRON=true`.
 
-## F10. Live updates [live — T8; planned T17]
+## F10. Live updates [live — T8 (API), T17 (web)]
 
-`EventBus` (process-local, non-durable subscriber set) → `GET /api/v1/stream` writes `event: <name>\ndata: <json>\n\n`, sends `: ping` heartbeats every 15 s, unsubscribes on close, and ignores `Last-Event-ID` (the bus is not storage). The route sets `text/event-stream`, `no-cache`, `x-accel-buffering: no`, and the configured dashboard CORS origin. Web: `useEventStream()` hook (`apps/web/src/lib/sse.ts`) with reconnect + backoff; pages merge SSE rows into SWR caches.
+`EventBus` (process-local, non-durable subscriber set) → `GET /api/v1/stream` writes `event: <name>\ndata: <json>\n\n`, sends `: ping` heartbeats every 15 s, unsubscribes on close, and ignores `Last-Event-ID` (the bus is not storage). The route sets `text/event-stream`, `no-cache`, `x-accel-buffering: no`, and the configured dashboard CORS origin. Event names live in `@aegis/shared` (`BUS_EVENT_NAMES`, D-059) so the browser registers exactly the listeners the API can emit.
+
+Web (`apps/web/src/lib/sse.ts`): one `EventSource` per tab, owned by a module-level store and shared by every hook through `useSyncExternalStore`. `useEventStream(names?)` returns the last 200 envelopes (newest first, filtered by name) plus `status: 'connecting' | 'live' | 'reconnecting'`; `useStreamEffect(names, handler)` runs a callback per new envelope without re-rendering; `useStreamStatus()` feeds the top-bar pill. On `error` the store closes the socket and reopens after `backoffDelayMs(attempt)` (1 s → 2 → 4 → 8 → 10 s cap); `open` resets the attempt counter. Pages merge envelopes into their own React state (no SWR, no cache library); the durable truth stays in PostgreSQL and is re-fetched on reconnect (C-C6). `useSystemStatus()` (`lib/system.ts`) polls `/health`, `/api/v1/system` and `/api/v1/guardrails` every 30 s, refetches on reconnect, and flips the kill-switch pill on `system.kill_switch`.
 
 ## F11. Simulator and demo [live — Task 5; planned T23]
 

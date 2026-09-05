@@ -1,25 +1,8 @@
-export const BUS_EVENT_NAMES = [
-  'event.received',
-  'event.duplicate',
-  'event.rejected',
-  'event.processed',
-  'diagnosis.created',
-  'action.proposed',
-  'action.blocked',
-  'action.pending_approval',
-  'action.executed',
-  'action.failed',
-  'action.rejected',
-  'action.recovered',
-  'system.kill_switch',
-  'message.simulated_sent',
-  'x402.settled',
-  'x402.rejected',
-  'compliance.flag',
-  'job.dead_letter',
-] as const;
+import { BUS_EVENT_NAMES, type BusEventName } from '@aegis/shared';
 
-export type BusEvent = (typeof BUS_EVENT_NAMES)[number];
+// Intent: the dashboard registers one EventSource listener per name, so the list lives in @aegis/shared (D-059).
+export { BUS_EVENT_NAMES };
+export type BusEvent = BusEventName;
 
 export interface BusEnvelope {
   readonly name: BusEvent;

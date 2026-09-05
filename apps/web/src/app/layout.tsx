@@ -1,36 +1,39 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import { SiteFooter } from "@/components/site-footer";
-import { ThemeProvider } from "@/components/theme-provider";
-import { ThemeToggle } from "@/components/theme-toggle";
+import { AppShell } from "@/components/shell/AppShell";
+import { SiteFooter } from "@/components/shell/SiteFooter";
+import { ThemeProvider } from "@/components/shell/ThemeProvider";
+import { ToastProvider } from "@/components/ui/Toast";
 import "./globals.css";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
 const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Aegis — The Agentic Merchant OS for Razorpay",
+  title: { default: "Aegis", template: "%s · Aegis" },
   description: "Event-driven AI control plane on top of a Razorpay account: idempotent reconciliation, guard-railed agents, human approvals.",
 };
 
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  // Native controls follow the active theme; next-themes also writes `color-scheme` on <html> (Design.md §7).
+  colorScheme: "light dark",
+};
+
 /**
- * Root layout: theme provider, top bar with the theme toggle, page content, and the mandatory footer.
+ * Root layout: fonts, theme provider, toast region, the app shell (sidebar + top bar) and the mandatory footer.
+ * Intent: the footer lives here, not in pages, so no route can forget it (C-F1).
  * `suppressHydrationWarning` is required because next-themes sets the class on <html> before React hydrates.
  */
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
-      <body className="flex min-h-full flex-col bg-bg text-fg">
+    <html lang="en" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+      <body className="bg-bg text-fg">
         <ThemeProvider>
-          <header className="flex items-center justify-between border-b border-border px-6 py-3">
-            <div className="flex items-baseline gap-3">
-              <span className="text-lg font-semibold tracking-tight">Aegis</span>
-              <span className="hidden text-xs text-fg-muted sm:inline">The Agentic Merchant OS for Razorpay</span>
-            </div>
-            <ThemeToggle />
-          </header>
-          <main className="flex flex-1 flex-col">{children}</main>
-          <SiteFooter />
+          <ToastProvider>
+            <AppShell footer={<SiteFooter />}>{children}</AppShell>
+          </ToastProvider>
         </ThemeProvider>
       </body>
     </html>

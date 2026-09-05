@@ -91,3 +91,8 @@ Implementation (`components/ui/GlowInput.tsx`):
 - Tables scroll horizontally inside their container; no page-level horizontal scroll at 360px.
 - `aria-live="polite"` on the live feed container; toasts use `role="status"`.
 - Images/canvases have `aria-hidden` and a text alternative where they carry meaning (KPI numbers are text, not canvas).
+
+## 9. Status (kept by the implementer)
+
+- **T17 (2026-09-06, Claude).** Tokens implemented as in §2, plus: `--mod-<module_name>` spectrum variables (`--mod-checkout_recovery` … `--mod-nlq`, exposed to Tailwind as `mod-checkout`, `mod-salvage`, `mod-negotiate`, `mod-evidence`, `mod-x402`, `mod-compliance`, `mod-nlq`), `--card-highlight` (the dark-mode inner highlight, `none` in light), and `--glow-opacity` / `--glow-focus-opacity` / `--glow-saturate` (light theme halves the halo opacity and desaturates it 20 % as §5.3 specifies). A `.light` class mirrors `:root` so a subtree can be forced light inside a dark page (`/kitchen-sink`). Components consume tokens only, never `dark:` utilities. Module colour is used as *information*: 3px left rails (`.rail`, `--rail`), badge tints, the sidebar spectrum strip, the prism fan. Typography: Geist Sans body 14px, tables 13px, KPI figures in Geist Mono at `clamp(18px, 11cqi, 28px)` (tabular). Chosen where §2 left it open: sentence case everywhere (no tracked all-caps labels), no drop shadows in either theme, active nav marked by a 3px accent rail, numbers never appear inside prose copy. `LOCAL · SIM` keeps the brief's own wording. Breakpoints: sidebar 240px ≥ 1024, 64px icon rail ≥ 640, fixed bottom bar with 44px targets below 640.
+

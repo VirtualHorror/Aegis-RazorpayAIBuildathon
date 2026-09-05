@@ -312,3 +312,29 @@ The scanner always runs the deterministic keyword prescreen before the fast clas
 ### D-058 · Buyer CLI uses the API workspace toolchain (2026-09-05)
 
 The x402 buyer lives under `scripts/`, while its TypeScript runner is installed in `@aegis/api`. The root command delegates to that workspace's `tsx`, and the script uses an async `main` so it remains runnable from the repository root's CommonJS package boundary. It parses the nonce from the exact `accepts[].extra` challenge shape.
+
+### D-059 · Bus event names live in `@aegis/shared` (2026-09-06)
+
+**Context.** The dashboard's `EventSource` must register one listener per SSE event name; `EventSource` has no wildcard. The list lived only in `apps/api/src/bus/event-bus.ts`, which `apps/web` cannot import.
+**Options.** (a) duplicate the list in the web app; (b) move it to `@aegis/shared` and re-export it from the API; (c) have the API expose the list over HTTP at boot.
+**Choice.** (b). `packages/shared/src/domain/bus-events.ts` exports `BUS_EVENT_NAMES`/`BusEventName`; the API re-exports them so no call site changed. A renamed event now fails typecheck in both packages.
+**Consequences.** `@aegis/shared` stays dependency-light (a `const` tuple). The SSE contract in `Flow.md` F10 names the shared module as the source of truth.
+
+### D-060 · `/api/v1/system` carries env, version and the simulation flag (2026-09-06)
+
+**Context.** Checklist 17.3 has the top-bar pills read "provider/model, env" from `/api/v1/system`, but the T8 route returned only the LLM description.
+**Choice.** Add `env` (`NODE_ENV`), `version` (`AEGIS_VERSION`) and `simulated: true` to the response; the route still touches no database and leaks no credentials. `simulated` is a constant because every outbound effect in this build is simulated (C-B7) and the pill says so (`LOCAL · SIM`).
+**Consequences.** `system.test.ts` pins the new shape; the Run demo button hides itself when `env === 'production'` because the sim routes are not mounted there (C-D5).
+
+### D-061 · Web toolchain: vitest for pure logic, hand-drawn icons, no data-fetching library (2026-09-06)
+
+**Context.** T17 needs unit tests for formatting and the SSE helpers (T22 adds `prismGeometry.test.ts`), an icon set for the navigation, and a client-side data strategy for live pages.
+**Choice.** `vitest ~5.0.0` as an `apps/web` devDependency (same version as the other packages; config in `vitest.config.mts`, `environment: node`, `src/**/*.test.ts`). Icons are 24px inline SVG paths in `components/ui/icons.tsx` (C-E4: no `lucide-react`/`@heroicons`). Pages fetch through the typed `lib/api.ts` result type and merge SSE envelopes into local React state; no SWR/React Query (Flow.md F10 corrected accordingly).
+**Consequences.** `pnpm test` now runs 8 web tests. Adding an icon means adding a path, not a package. If a page ever needs request deduplication across components, that is the moment to revisit a cache library, with a new entry here.
+
+### D-062 · Sprint 3 (T17–T22) is built by Claude as Lead Frontend Developer (2026-09-06)
+
+**Context.** After the Sprint 2 batch (D-052) the project owner moved the frontend tasks to Claude and asked for a continuous run of T17–T22.
+**Choice.** Claude implements the six tasks in order, one commit and one `task-NN-done` tag per task, with the same verification bar Codex was held to (`pnpm typecheck && pnpm test && pnpm lint`, Chrome checks recorded in `TestChecklist.md`). Design decisions follow `Design.md` exactly where it pins an axis; where it leaves one free, the choice and its reason are recorded in `Design.md` "Status" so a reviewer can diff intent against implementation.
+**Consequences.** The Verification Agent and the implementer are the same model for this sprint; the compensating control is that every claim in `Bug-Feature.md` cites a command or a Chrome observation, never "it works".
+

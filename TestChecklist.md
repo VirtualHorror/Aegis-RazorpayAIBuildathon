@@ -620,6 +620,43 @@ pnpm --filter @aegis/web build               # exits 0, no type errors
 # prism renders (WebGPU or 2D fallback message in console); halftone animates; glow input focus state; lighthouse a11y >= 90
 ```
 
+### T17 — web shell (observed 2026-09-06, Claude)
+
+```text
+$ pnpm --filter @aegis/web build
+▲ Next.js 16.3.4 (Turbopack)
+✓ Compiled successfully in 3.1s
+  Finished TypeScript in 3.5s
+✓ Generating static pages using 3 workers (11/11)
+Route (app): ƒ /   ○ /_not-found /actions /approvals /ask /compliance /events /kitchen-sink /settings /x402
+
+$ pnpm --filter @aegis/web lint          # eslint --max-warnings 0 → clean
+$ pnpm --filter @aegis/web typecheck     # next typegen && tsc --noEmit → ✓ Types generated successfully
+$ pnpm --filter @aegis/web test
+ Test Files  2 passed (2)      Tests  8 passed (8)      # lib/format.test.ts, lib/sse.test.ts
+
+$ pnpm --filter @aegis/api exec vitest run src/routes/system.test.ts src/bus --no-file-parallelism --maxWorkers=1
+ Test Files  2 passed (2)      Tests  3 passed (3)      # /api/v1/system now returns env, version, simulated
+$ pnpm --filter @aegis/shared test        # 5 files / 47 tests (BUS_EVENT_NAMES moved here, D-059)
+
+$ curl -s localhost:4000/api/v1/system
+{"provider":"openai","model":"gpt-5.6","modelFast":"gpt-5.4-mini","env":"development","version":"0.1.0","simulated":true}
+$ curl -s localhost:3000/events | grep -o "Made with 💖 by Nabhanyu for Razorpay AI Buildathon"
+Made with 💖 by Nabhanyu for Razorpay AI Buildathon
+```
+
+Chrome (claude-in-chrome, 1478px window, then a 360px same-origin iframe because the window manager refused a 360px resize):
+
+- `/kitchen-sink`: every component renders in the current theme and in the forced opposite theme (`.light`/`.dark` wrapper, token-only components).
+- Theme toggle → Light: `<html class="light" style="color-scheme: light">`, `localStorage.theme = "light"`; unchanged after reload (no flash: next-themes script runs before hydration).
+- Top bar reads the live API: `LOCAL · SIM`, `openai · gpt-5.6`, `Kill switch off`, `Live` (SSE socket open).
+- GlowInput: focus tints the border and intensifies the halo; `Tab` on the empty box fills the example question; `Enter` submits (toast shown); loading state shows the spinner.
+- Drawer: opens over the page, `Escape` closes it, focus returns to the "Drawer" button, body scroll lock removed (`document.body.style.overflow === ""`).
+- Toast region is `role="status" aria-live="polite"`; a pushed toast appears bottom-right and dismisses.
+- 360px: `document.documentElement.scrollWidth = 342 ≤ innerWidth = 357` (no horizontal page scroll), `<aside>` is `display: none`, the fixed bottom bar shows the eight icon targets, the events table scrolls inside its card, the footer sits above the bottom bar.
+
+Found and fixed during the check: KPI rupee amounts clipped at 28px in narrow tiles (now `clamp(18px, 11cqi, 28px)` with a container query); the Tab hint overlapped long placeholders (textarea gets right padding while the hint shows); a grid with an implicit `auto` track let the kitchen-sink table push the page wider than 360px (`grid-cols-1` = `minmax(0, 1fr)`); the textarea did not grow after a programmatic fill (`field-sizing: content`).
+
 ## T23–T24 — demo + hardening (acceptance, pending)
 
 ```bash
