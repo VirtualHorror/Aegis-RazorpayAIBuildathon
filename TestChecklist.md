@@ -464,7 +464,7 @@ Code review performed alongside the run (no changes were required):
   calls `insertDiagnosis` on the pool *after* the model call; `EventOrchestrator.ts:117-129` commits the projection
   before diagnosing. Zero LLM calls hold a row lock (C-A2/C-A6).
 
-## T10–T12 — modules (T10 green; T11–T12 pending)
+## T10–T12 — modules (T10 and T11 green; T12 pending)
 
 ```bash
 pnpm --filter @aegis/api test -- modules
@@ -477,12 +477,15 @@ pnpm sim all && psql $DATABASE_URL -c "select module,status,count(*) from action
 
 T10 focused command: `pnpm --filter @aegis/api exec vitest run src/modules/subscription-salvager --no-file-parallelism --maxWorkers=1` -> 2 files / 6 tests passed.
 
+T11 focused command: `pnpm --filter @aegis/api exec vitest run src/modules/b2b-negotiator --no-file-parallelism --maxWorkers=1` -> 3 files / 7 tests passed; integer-paise floor/max-pct clamps, exhaustive state transitions, approval threshold, masked model input, and model-number fallback.
+
 ## T13 — approvals + ledger + metrics (acceptance, pending)
 
 ```bash
 curl -s localhost:4000/api/v1/approvals | jq length                  # > 0 after sim
 curl -s -X POST localhost:4000/api/v1/actions/<id>/decision -d '{"decision":"approve","note":"ok","actor":"human:nabhanyu"}'  # 200, status executed
 curl -s localhost:4000/api/v1/metrics/summary | jq                    # money_recovered_paise, discounts_granted_paise, dedupe counts, llm degraded %
+
 ```
 
 ## T14 — x402 (acceptance, pending)

@@ -108,13 +108,13 @@ The projection snapshot's `applied` flag is a deterministic precedence result. W
 delivery), the diagnostician returns a marked, non-persisted fallback result and does not spend an LLM call; only an
 applied snapshot creates a diagnosis row.
 
-## F5. Action modules [live — T9–T10; planned T11–T12]
+## F5. Action modules [live — T9–T11; planned T12]
 
 Every module lives in `src/modules/<name>/index.ts` and follows `propose → guard → execute`:
 
 - **checkout_recovery** (T9, live): `payment.failed` with `diagnosis.strategy ∈ {RETRY_LINK_LOCALIZED, RETRY_ALTERNATE_METHOD, CART_RECOVERY_NUDGE}` → `templates.ts` picks template by `customer.locale` → `payload` = schema-validated WhatsApp template JSON with a masked recipient and deterministic daily retry link `rzp.io/l/aegis-<shortid>` → guards: opted_out, positive amount, strategy, plus orchestrator cooldown/quiet hours → execute: insert `outbound_messages` (`simulated_sent`), schedule nothing.
 - **subscription_salvager** (T10, live): `subscription.pending|halted` → `state.ts` transition table → proposal `dunning_retry` (step n) with WhatsApp payload + `scheduleFollowUp` job `dunning_retry` at `dunning_schedule_hours[n]` → guards: `retry_count < max_dunning_retries`, cooldown, quiet hours → on `subscription.charged|activated` → `salvage_state='recovered'` + ledger `recovered_revenue`; retry failures re-enter via `handleSynthetic`.
-- **b2b_negotiator** (T11): `invoice.expired` (amount ≥ ₹50,000) → `pricing.ts` computes `offerPaise = max(floor, amount·(1 − pct_round[n]))` with `pct_round=[5,10,15]` capped by `max_discount_pct` → LLM drafts the message text only (`draft_negotiation_message`), numbers injected by code → guards: floor, max pct, rounds, daily budget → `requiresApproval = true` when discount > auto_approve limit → execute: outbound message + `negotiation_state='offer_sent'` + `negotiation_expiry` job (72 h). Counter-offers arrive via the simulator as `invoice.updated` notes (`counter_paise`).
+- **b2b_negotiator** (T11, live): `invoice.expired` (amount ≥ ₹50,000) → `pricing.ts` computes `offerPaise = max(floor, amount·(1 − pct_round[n]))` with `pct_round=[5,10,15]` capped by `max_discount_pct` → LLM drafts the message text only (`draft_negotiation_message`), numbers injected by code → guards: floor, max pct, rounds, daily budget → `requiresApproval = true` at discount ≥ 10% → execute: outbound message + `negotiation_state='offer_sent'` + `negotiation_expiry` job (72 h). Counter-offers arrive via the simulator as `invoice.updated` notes (`counter_paise`); below-floor counters become recorded human escalations.
 - **chargeback_evidence** (T12): `payment.dispute.created` → `assemble.ts` collects payment, order, customer, delivery proof (from `orders.notes.delivery`), prior messages, refund policy → LLM writes `narrative` → `evidence_packets.review_status='requires_human_review'` → `actions.status='pending_approval'` → human approves (F6) → `submitted` (simulated).
 
 ## F6. Human approval [planned T13]

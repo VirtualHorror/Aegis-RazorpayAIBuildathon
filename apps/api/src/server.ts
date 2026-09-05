@@ -35,7 +35,7 @@ async function main(): Promise<void> {
     llm,
     bus,
     logger: app.log,
-    modules: createModuleRegistry({ disabled: config.AEGIS_MODULES_DISABLED }),
+    modules: createModuleRegistry({ disabled: config.AEGIS_MODULES_DISABLED, db: pools.rw, llm }),
   });
 
   // Intent: refuse to serve stale schema by accident, but keep booting (degraded) when the DB is simply unreachable.
