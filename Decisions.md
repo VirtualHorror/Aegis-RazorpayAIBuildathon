@@ -35,6 +35,9 @@
 | D-028 | 2026-09-05 | sudo-requiring setup is isolated in `scripts/bootstrap-system.sh`; everything else is user-level | accepted |
 | D-029 | 2026-09-05 | Migration CLI accepts `--status` as an alias after the root `db:migrate` script's fixed `up` command | accepted |
 | D-030 | 2026-09-05 | `db/seed` is typechecked and linted through `@aegis/api`; `pg`, `dotenv`, `@types/pg` are also declared as root devDependencies so files under `db/` resolve them | accepted |
+| D-032 | 2026-09-05 | Additive projection guard migration (`0003_projection_guards`) adds `last_event_at` to orders/payments/invoices/disputes and `version` to disputes | accepted |
+| D-033 | 2026-09-05 | Initialize `invoices.floor_amount_paise` from `amount_paise` on INSERT and never overwrite it during projection updates | accepted |
+| D-034 | 2026-09-05 | Re-check persisted `signature_valid` inside the `process_event` transaction before parsing or projecting | accepted |
 
 ---
 
@@ -161,3 +164,18 @@
 **Options.** (a) do not persist rejected deliveries at all (loses the audit trail checklist step 3.3 asks for); (b) let a verified delivery promote an existing `signature_valid=false` row (re-opens the race and muddies `duplicate_count`); (c) key rejected deliveries into a separate `unverified:<sha256(raw body)>` namespace.
 **Choice.** (c). `x-razorpay-event-id` is attacker-controlled until the HMAC passes, so it is never used as a key before verification; the unverified key is derived only from bytes we hashed ourselves. The audit row still exists with `status='ignored'`, `signature_valid=false`, `last_error='invalid_signature'`, and the claimed id is logged.
 **Consequence.** Extends D-025: the verified key space (`evt_…` / `sha256:…`) is writable only by holders of `RAZORPAY_WEBHOOK_SECRET`. Repeated forgeries with the same body collapse onto one row and inflate its `duplicate_count`; distinct bodies add rows, bounded by the route's 300/min limit. `C-C1` now states the invariant explicitly. T5's simulator and any future ingress must keep the two namespaces separate.
+
+### D-032 · Uniform projection event guards
+**Context.** Task 4 applies the same event-time precedence guard to orders, payments, subscriptions, invoices, and disputes, but the core migration only had `last_event_at` on subscriptions and no `version` or event timestamp on disputes.
+**Choice.** Add `0003_projection_guards.sql` with nullable `last_event_at` columns on orders/payments/invoices/disputes and `disputes.version integer NOT NULL DEFAULT 1`. The down migration removes only these columns.
+**Consequences.** `rzp_created_at` remains the entity's own provider creation time; `last_event_at` records the event timestamp used for precedence. Existing rows remain valid because the timestamp is nullable and versions start at one.
+
+### D-033 · Fail-closed invoice floors
+**Context.** Razorpay invoice events provide an amount but no negotiation floor, while `floor_amount_paise` is non-null and later negotiation must own the bound.
+**Choice.** Set the floor equal to the projected amount only for a new invoice. Projection updates never assign the floor column.
+**Consequences.** A new invoice cannot be discounted until the negotiator deliberately computes a lower bound; seeded or negotiated floors survive later provider updates.
+
+### D-034 · Worker signature defense in depth
+**Context.** Ingress normally enqueues only verified events, but a queued row can be manually inserted or survive an earlier defect. Queue membership alone must not authorize projection.
+**Choice.** `processEventHandler` locks and re-reads the webhook row, checks `signature_valid === true`, and returns without parsing or projecting invalid rows. The worker marks that inert job `succeeded`; the event remains `ignored` for audit.
+**Consequences.** A forged or corrupted queue row cannot mutate entity tables, even if it names a known event. The check is inside the same transaction as projection and event status updates.

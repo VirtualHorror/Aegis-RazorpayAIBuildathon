@@ -1,4 +1,5 @@
 import pg from 'pg';
+import './pg-types';
 
 /**
  * Connection pools.
@@ -6,14 +7,6 @@ import pg from 'pg';
  *         AI-generated SQL (Architecture.md §11). Pools are lazy: creating them never touches the network.
  * Flow:   createPools(config) at boot → passed explicitly to builders → pools.end() on shutdown.
  */
-
-// int8 (bigint) arrives as a string by default. Amounts are integer paise and fit in a safe integer,
-// so parse them — but refuse silently truncating anything larger.
-pg.types.setTypeParser(20, (value: string) => {
-  const n = Number(value);
-  if (!Number.isSafeInteger(n)) throw new RangeError(`int8 value ${value} exceeds Number.MAX_SAFE_INTEGER`);
-  return n;
-});
 
 export interface PoolConfig {
   DATABASE_URL: string;

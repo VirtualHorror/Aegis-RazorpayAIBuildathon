@@ -319,7 +319,7 @@ then, only when `inserted` and `eventType ∈ KNOWN_EVENT_TYPES`: `INSERT INTO j
 
 ---
 
-### Task 4: Job worker + entity projections with precedence
+### Task 4: Job worker + entity projections with precedence — **DONE by Codex (2026-09-05)**
 
 **Goal.** Jobs are claimed with `FOR UPDATE SKIP LOCKED`, retried with backoff, dead-lettered; `process_event` projects the Razorpay entity into `payments/orders/subscriptions/invoices/disputes` under a row lock with the precedence rules; the API boots the worker.
 
@@ -335,17 +335,17 @@ then, only when `inserted` and `eventType ∈ KNOWN_EVENT_TYPES`: `INSERT INTO j
 - Produces: `applyProjection(tx, payload) → EntitySnapshot { type, row, customer }`. T8's orchestrator calls this; for T4 register a temporary `process_event` handler that only projects and marks the event `processed`.
 
 **Steps.**
-- [ ] 4.1 Claim query (exactly):
+- [x] 4.1 Claim query (exactly):
 ```sql
 UPDATE jobs SET status = 'running', locked_by = $1, locked_at = now(), attempts = attempts + 1, updated_at = now()
 WHERE id = (SELECT id FROM jobs WHERE status = 'queued' AND run_at <= now() ORDER BY run_at, id FOR UPDATE SKIP LOCKED LIMIT 1)
 RETURNING *;
 ```
-- [ ] 4.2 `backoff(attempts) = min(5000 · 2^(attempts−1), 300000) + random(0..1000)` ms; on error: `attempts < max_attempts ? queued + run_at = now()+backoff : dead_letter`; mirror to `webhook_events.status` (`failed` while retrying, `dead_letter` at the end, `last_error` set). Success → `succeeded`.
-- [ ] 4.3 Sweeper every 30 s: `UPDATE jobs SET status='queued', locked_by=NULL, locked_at=NULL WHERE status='running' AND locked_at < now() - interval '2 minutes'`.
-- [ ] 4.4 Projections: each does `SELECT … FROM <table> WHERE id=$1 FOR UPDATE`, applies the precedence rule (payments: `shouldApplyPaymentTransition`; subscriptions/invoices/orders/disputes: `isStaleSubscriptionEvent(last_event_at, rzpCreatedAt)`), upserts with `version = version + 1`, `last_event_id`, and returns the snapshot. Customers are upserted from `payload.*.entity.{customer_id,email,contact,notes.locale}` with `country` derived from the phone prefix (`+91→IN, +1→US, +44→GB, +971→AE, +65→SG`, else `null`) in `packages/shared/src/domain/locale.ts` (`countryFromContact`, `localeFor(country, notesLocale)`).
-- [ ] 4.5 Tests: 4 loops × 100 jobs → every job succeeded exactly once (`attempts=1`); a handler that throws twice then succeeds → 3 attempts, final `succeeded`; `max_attempts=2` → `dead_letter`; sweeper re-queues a stale `running` row. Projections: `captured` after `authorized` applies; `authorized` after `captured` ignored (version unchanged); `captured` after `failed` ignored; duplicate event no-op; subscription event with older `created_at` ignored.
-- [ ] 4.6 Commit `feat(t04): job worker with SKIP LOCKED and precedence-guarded projections`.
+- [x] 4.2 `backoff(attempts) = min(5000 · 2^(attempts−1), 300000) + random(0..1000)` ms; on error: `attempts < max_attempts ? queued + run_at = now()+backoff : dead_letter`; mirror to `webhook_events.status` (`failed` while retrying, `dead_letter` at the end, `last_error` set). Success → `succeeded`.
+- [x] 4.3 Sweeper every 30 s: `UPDATE jobs SET status='queued', locked_by=NULL, locked_at=NULL WHERE status='running' AND locked_at < now() - interval '2 minutes'`.
+- [x] 4.4 Projections: each does `SELECT … FROM <table> WHERE id=$1 FOR UPDATE`, applies the precedence rule (payments: `shouldApplyPaymentTransition`; subscriptions/invoices/orders/disputes: `isStaleSubscriptionEvent(last_event_at, rzpCreatedAt)`), upserts with `version = version + 1`, `last_event_id`, and returns the snapshot. Customers are upserted from `payload.*.entity.{customer_id,email,contact,notes.locale}` with `country` derived from the phone prefix (`+91→IN, +1→US, +44→GB, +971→AE, +65→SG`, else `null`) in `packages/shared/src/domain/locale.ts` (`countryFromContact`, `localeFor(country, notesLocale)`).
+- [x] 4.5 Tests: 4 loops × 100 jobs → every job succeeded exactly once (`attempts=1`); a handler that throws twice then succeeds → 3 attempts, final `succeeded`; `max_attempts=2` → `dead_letter`; sweeper re-queues a stale `running` row. Projections: `captured` after `authorized` applies; `authorized` after `captured` ignored (version unchanged); `captured` after `failed` ignored; duplicate event no-op; subscription event with older `created_at` ignored.
+- [x] 4.6 Commit `feat(t04): job worker with SKIP LOCKED and precedence-guarded projections`.
 
 **Verify.** `TestChecklist.md §T4`. **Docs.** `Flow.md` F1 step 5 + F3 → live; `Bug-Feature.md` F-006.
 

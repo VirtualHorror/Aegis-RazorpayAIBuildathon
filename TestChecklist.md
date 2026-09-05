@@ -149,15 +149,45 @@ Live HTTP probe (real socket, `API_PORT=4021`, `NODE_ENV=production`, DB `aegis_
 
 The same probe proves C-D2 end-to-end: the signed body carries newlines, two-space indentation and `"event" : ` spacing that `JSON.stringify(JSON.parse(body))` does not reproduce, and it still verifies — so the HMAC is taken over the raw bytes, not a re-serialisation. `content-type: application/json; charset=utf-8` also reaches the Buffer parser (`evt_live_charset` → accepted, 1 job). Probe server stopped by PID (`kill 51908`); the unrelated process on port 4000 (pid 31148) was left running.
 
-## T4 — worker + projections (acceptance, pending)
+## T4 — worker + projections (acceptance, passed 2026-09-05)
 
 ```bash
-pnpm --filter @aegis/api test -- worker projections
-# claimJob with 4 concurrent loops never double-claims (100 jobs → 100 successes, 0 dupes)
-# failing job retried with backoff, dead-lettered after max_attempts
-# payments: captured after authorized applies; authorized after captured ignored; anything after failed ignored
-# subscriptions: stale (older created_at) event ignored
+pg_isready -h localhost -p 5432
+# localhost:5432 - accepting connections
+
+pnpm db:migrate -- --status
+# applied: 0001_init, 0002_readonly_grants, 0003_projection_guards
+# pending: (none)
+
+pnpm --filter @aegis/api exec vitest run test/worker.integration.test.ts
+# Test Files  1 passed (1)
+# Tests  12 passed (12)
+# Duration  3.13s
+
+pnpm --filter @aegis/api exec vitest run src/orchestrator/projections/projections.test.ts
+# Test Files  1 passed (1)
+# Tests  7 passed (7)
+# Duration  1.60s
+
+pnpm typecheck
+# packages/shared: Done; apps/api: Done; apps/web: Done
+
+pnpm test
+# packages/shared: 4 files / 25 tests passed
+# apps/api: 9 files / 51 tests passed
+# apps/web: placeholder tests passed
+
+pnpm lint
+# packages/shared: Done; apps/api: Done; apps/web: Done
+
+# Live proof (API_PORT=4024, worker enabled, stopped with kill -TERM <owned PID>)
+# response: {"status":"accepted","event_id":"evt_task4_live","duplicate_count":0} http=200
+# state: succeeded|processed|captured|2|1|evt_task4_live
+# parents: 1|1|1
+# health: {"status":"ok","db":"ok","db_latency_ms":1,"version":"0.1.0","uptime_s":40,"timestamp":"2026-09-05T06:59:46.740Z"}
 ```
+
+The integration suites exercise four concurrent claim loops over 100 jobs, duplicate webhook delivery racing two workers, a projection that retries after its first commit, invalid-signature queue entries, retry/DLQ mirroring, stale lease recovery, unseen FK parents, payment precedence, subscription timestamp precedence, and immutable invoice floors. The full root gates and the live HTTP proof are recorded in `HANDOFF5.md`.
 
 ## T5 — simulator (acceptance, pending)
 

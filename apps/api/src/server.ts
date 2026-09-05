@@ -4,6 +4,9 @@ import { ConfigError, loadConfig } from './config';
 import { migrationStatus } from './db/migrate';
 import { MIGRATIONS_DIR, REPO_ROOT_ENV } from './db/paths';
 import { createPools, probeDatabase } from './db/pool';
+import { createRegistry } from './worker/registry';
+import { processEventHandler } from './worker/process-event';
+import { startWorker } from './worker/job-runner';
 
 /**
  * Process entry point.
@@ -37,12 +40,24 @@ async function main(): Promise<void> {
   await app.listen({ port: config.API_PORT, host: config.API_HOST });
   app.log.info(`aegis api listening on http://${config.API_HOST}:${config.API_PORT}`);
 
+  const worker = config.AEGIS_WORKER_ENABLED
+    ? startWorker({
+        pools,
+        logger: app.log,
+        handlers: createRegistry({ process_event: processEventHandler }),
+        concurrency: config.WORKER_CONCURRENCY,
+        pollIntervalMs: config.WORKER_POLL_MS,
+      })
+    : undefined;
+  if (!worker) app.log.info('aegis worker disabled by AEGIS_WORKER_ENABLED=false');
+
   const shutdown = async (signal: string): Promise<void> => {
     app.log.info({ signal }, 'shutting down');
     // Flow: stop accepting → (drain worker, Task 4) → close pools → exit. Hard cap 10 s so a hung query cannot block exit.
     const timer = setTimeout(() => process.exit(1), 10_000);
     timer.unref();
     await app.close();
+    await worker?.stop();
     await pools.end();
     process.exit(0);
   };

@@ -13,6 +13,9 @@ describe('loadConfig', () => {
     expect(cfg.NODE_ENV).toBe('development');
     expect(cfg.WEB_ORIGIN).toBe('http://localhost:3000');
     expect(cfg.AEGIS_ALLOW_PENDING_MIGRATIONS).toBe(false);
+    expect(cfg.AEGIS_WORKER_ENABLED).toBe(true);
+    expect(cfg.WORKER_CONCURRENCY).toBe(4);
+    expect(cfg.WORKER_POLL_MS).toBe(500);
   });
   it('coerces numbers and booleans from strings', () => {
     const cfg = loadConfig({ ...minimal, API_PORT: '4100', AEGIS_ALLOW_PENDING_MIGRATIONS: 'true' });

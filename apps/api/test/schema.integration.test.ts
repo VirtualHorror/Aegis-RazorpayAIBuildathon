@@ -73,7 +73,8 @@ integration('core schema migrations', () => {
 
   it('supports a full down/up round trip', async () => {
     // Intent: prove both down files are resolvable and leave the runner usable for a clean rebuild.
-    // Flow:   revert grants -> revert schema -> reapply schema -> reapply grants -> verify migration status rows.
+    // Flow:   revert projection guards -> grants -> core schema -> reapply all migrations -> verify status rows.
+    expect((await migrateDown(pool, MIGRATIONS_DIR, log)).reverted).toBe('0003_projection_guards');
     expect((await migrateDown(pool, MIGRATIONS_DIR, log)).reverted).toBe('0002_readonly_grants');
     expect((await migrateDown(pool, MIGRATIONS_DIR, log)).reverted).toBe('0001_init');
     const afterDown = await pool.query<{ table_name: string }>(
@@ -83,7 +84,7 @@ integration('core schema migrations', () => {
     );
     expect(afterDown.rows).toHaveLength(0);
     const up = await migrateUp(pool, MIGRATIONS_DIR, log);
-    expect(up.applied).toEqual(['0001_init', '0002_readonly_grants']);
+    expect(up.applied).toEqual(['0001_init', '0002_readonly_grants', '0003_projection_guards']);
   });
 
   it('rejects checksum drift for an applied migration', async () => {
