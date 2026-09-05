@@ -32,10 +32,14 @@ export const complianceRoutes: FastifyPluginAsync<ComplianceRouteOptions> = asyn
     if (parsed.status) { values.push(parsed.status); conditions.push(`status = $${values.length}`); }
     if (parsed.risk) { values.push(parsed.risk); conditions.push(`risk_level = $${values.length}`); }
     const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+    // Intent: a flag is a claim about a product's own words, so the route returns those words with it (B-015). The
+    //         join adds no PII: `products` holds merchant catalog copy only.
     const result = await options.db.query(
-      `SELECT id, product_id, scan_run_id, keyword_hits, llm_assessment, risk_level, category, evidence_span,
-              recommendation, status, reviewed_by, reviewed_at, created_at
-       FROM compliance_flags ${where} ORDER BY created_at DESC`,
+      `SELECT f.id, f.product_id, f.scan_run_id, f.keyword_hits, f.llm_assessment, f.risk_level, f.category, f.evidence_span,
+              f.recommendation, f.status, f.reviewed_by, f.reviewed_at, f.created_at,
+              p.name AS product_name, p.description AS product_description, p.category AS product_category
+       FROM compliance_flags f JOIN products p ON p.id = f.product_id
+       ${where.replace(/\bstatus\b/, 'f.status').replace(/\brisk_level\b/, 'f.risk_level')} ORDER BY f.created_at DESC`,
       values,
     );
     return result.rows;
@@ -48,8 +52,14 @@ export const complianceRoutes: FastifyPluginAsync<ComplianceRouteOptions> = asyn
       const before = await tx.query<Record<string, unknown>>('SELECT * FROM compliance_flags WHERE id = $1 FOR UPDATE', [params.id]);
       const existing = before.rows[0];
       if (!existing) return null;
+      // Intent: the response must carry the same shape the list returns, product copy included, because the dashboard
+      //         replaces the row it is showing with this one (B-015).
       const updated = await tx.query<Record<string, unknown>>(
-        `UPDATE compliance_flags SET status = $2, reviewed_by = $3, reviewed_at = now() WHERE id = $1 RETURNING *`,
+        `WITH updated AS (
+           UPDATE compliance_flags SET status = $2, reviewed_by = $3, reviewed_at = now() WHERE id = $1 RETURNING *
+         )
+         SELECT u.*, p.name AS product_name, p.description AS product_description, p.category AS product_category
+         FROM updated u JOIN products p ON p.id = u.product_id`,
         [params.id, body.status, body.actor],
       );
       const after = updated.rows[0];

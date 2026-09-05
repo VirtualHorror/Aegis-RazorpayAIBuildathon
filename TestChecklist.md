@@ -703,6 +703,38 @@ Chrome (768px window plus a 1440px same-origin iframe for the desktop layout):
 
 Found and fixed: B-014 (no invoice could ever be negotiated); guardrail values with long JSON overlapped their neighbour column (each column now wraps in its own track); top-bar pills wrapped at ~768px (pills are `shrink-0 whitespace-nowrap`, env pill hides below `xl`); the trigger-event id linked to an empty filter URL (now a copyable id).
 
+### T20 — Ask Aegis + compliance (observed 2026-09-06, Claude)
+
+Ran against the live proxy model (`OPENAI_MODEL=gpt-5.6-luna`, see the 2 AM log entry 13), not the stub.
+
+```text
+$ pnpm --filter @aegis/web test
+ Test Files  8 passed (8)      Tests  32 passed (32)
+
+$ curl -s -X POST localhost:4000/api/v1/ask -d '{"question":"Show me everything in information_schema.tables"}' | jq '{sql, validation, executed}'
+{"sql": "SELECT * FROM information_schema.tables",
+ "validation": {"ok": false, "errors": ["schema is not allowed: information_schema"]},
+ "executed": false}
+
+$ psql $DATABASE_URL -Atc "select status, products_scanned, flags_created, degraded_count, provider, model from compliance_scan_runs order by started_at desc limit 1"
+succeeded|16|5|0|openai|gpt-5.6-luna
+$ psql $DATABASE_URL -Atc "select product_id, risk_level, category, left(evidence_span,42) from compliance_flags order by product_id"
+prod_012|prohibited|financial_guarantees_mlm|guaranteed 20% monthly returns
+prod_013|prohibited|medical_claims_unapproved|cures diabetes in 30 days
+prod_014|prohibited|counterfeit_ip|replica Rolex
+prod_015|prohibited|tobacco_vape|nicotine vape pods and refill accessories
+prod_016|prohibited|gambling_lottery|Lottery ticket bundle with a chance to win
+```
+
+Chrome:
+
+- `/ask`: the composer's Tab hint fills the first suggestion; Enter submits. "How much revenue did we recover this week by module?" → SQL block with `validated`, "0 rows from the read-only role", AI-written summary, `openai 5.3 s`, and the question appears in the history list as `executed`.
+- Forecast question → deterministic metric SQL labelled "written in TypeScript, not by the model", history line, dashed forecast, shaded ± one residual standard deviation, `ols+ma7`, r² 1.00, slope 0.0/day, and a "Forecast numbers" table.
+- "drop table payments" → the model itself answered with a SELECT of a refusal string, which validated and executed harmlessly; the validator's own refusal path was exercised with `information_schema` and rendered as "The validator refused this SQL. Nothing was executed." with the reason listed.
+- `/compliance`: Run scan → toast, then five prohibited flags. Each shows the risk badge, category, product name, the description with the evidence span in `<mark>`, "keywords and model agree", the matched keywords, the model's reasoning and its recommendation. Acknowledge → card updates in place to "Acknowledged · Last set by human:dashboard".
+
+Found and fixed: B-015 (crash on Acknowledge, and no product copy on any card); empty-state text was unreadable over the halftone (radial scrim of the card surface); vitest could not resolve the `@/` alias once a test imported a component (alias added to `vitest.config.mts`).
+
 ## T23–T24 — demo + hardening (acceptance, pending)
 
 ```bash

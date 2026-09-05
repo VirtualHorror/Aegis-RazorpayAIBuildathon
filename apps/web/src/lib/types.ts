@@ -329,6 +329,10 @@ export interface ComplianceFlagRow {
   reviewed_by: string | null;
   reviewed_at: string | null;
   created_at: string;
+  /** The flagged product's own copy, returned with the flag so the evidence span can be shown in context. */
+  product_name: string;
+  product_description: string;
+  product_category: string | null;
 }
 
 export interface X402PaymentRow {

@@ -350,3 +350,16 @@ The x402 buyer lives under `scripts/`, while its TypeScript runner is installed 
 **Context.** `POST /api/v1/actions/:id/decision` requires an `actor`, which becomes `decided_by` and the `audit_log` actor (C-B2). A dashboard with no accounts still has to answer "who approved this".
 **Choice.** `lib/actor.ts` keeps a name in `localStorage` under `aegis.actor`, defaulting to `human:dashboard`, editable on the approvals page. It is a label, not authentication, and the UI says so ("recorded in the audit log with every decision").
 **Consequences.** Decisions are attributable and honest about their provenance. Real authentication is out of scope for this build and is listed in `Bug-Feature.md` rather than faked.
+
+### D-065 · No chart library; one hand-rolled SVG forecast chart (2026-09-06)
+
+**Context.** `/ask` needs a history-plus-forecast chart with a confidence band. The checklist allows a library with a decision entry.
+**Choice.** A 120-line `ForecastChart` drawing two paths and a band from `chartScale()`, a pure function that maps a series onto the plot area and is unit-tested. No dependency added.
+**Consequences.** Nothing to keep in sync with Tailwind tokens or the theme (the chart uses CSS variables directly), and the numbers are repeated in a table under the chart so the data is readable without seeing the picture (Design.md §8). A second chart type would justify revisiting this.
+
+### D-066 · A flag carries the words it flagged (2026-09-06)
+
+**Context.** The compliance page highlights the model's evidence span inside the product description. The flag row stores only the span, so the page needed the copy from somewhere (B-015).
+**Options.** (a) fetch the catalog separately (fails: `/x402/catalog` only lists agent-purchasable products, and the risky ones are not); (b) add a products endpoint; (c) return the copy with the flag.
+**Choice.** (c). Both `GET /api/v1/compliance/flags` and the status decision join `products` and return `product_name`, `product_description`, `product_category`. No PII is involved: `products` is merchant catalog copy.
+**Consequences.** One request renders the page, the highlight always has the text the span was quoted from, and a route that answers "the same row" as another now returns the same shape.

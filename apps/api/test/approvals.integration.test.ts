@@ -81,7 +81,7 @@ integration('T13 approvals and attribution', () => {
   });
 
   beforeEach(async () => {
-    await pool.query('TRUNCATE TABLE jobs, webhook_events, disputes, invoices, subscriptions, payments, orders, customers, actions, outbound_messages, ledger_entries, audit_log, diagnoses, guardrail_config CASCADE');
+    await pool.query('TRUNCATE TABLE jobs, webhook_events, disputes, invoices, subscriptions, payments, orders, customers, actions, outbound_messages, ledger_entries, audit_log, diagnoses, guardrail_config, compliance_flags, compliance_scan_runs, products CASCADE');
     await seedGuardrails(pool);
   });
 
@@ -258,4 +258,45 @@ integration('T13 approvals and attribution', () => {
       await app.close();
     }
   });
+
+  it('returns the flagged product copy with each compliance flag and keeps the filters working (B-015)', async () => {
+    await pool.query(
+      `INSERT INTO products (id, merchant_id, name, description, category, price_paise, currency, active, agent_purchasable)
+       VALUES ('prod_flag_1', 'acc_test', 'Lucky Draw Bundle', 'Lottery ticket bundle with a chance to win a cash prize.', 'services', 9900, 'INR', true, false)`,
+    );
+    const run = await pool.query<{ id: string }>(`INSERT INTO compliance_scan_runs (status) VALUES ('succeeded') RETURNING id`);
+    await pool.query(
+      `INSERT INTO compliance_flags (product_id, scan_run_id, keyword_hits, llm_assessment, risk_level, category, evidence_span, recommendation, status)
+       VALUES ('prod_flag_1', $1, '[{"category":"gambling_lottery","pattern":"lottery"}]'::jsonb, NULL, 'prohibited', 'gambling_lottery', 'Lottery ticket bundle', 'Reject the listing.', 'open')`,
+      [run.rows[0]!.id],
+    );
+    const orchestrator = new EventOrchestrator({ db: pool, llm: new StubLlmClient(), modules: [], now: () => now, logger });
+    const config = loadConfig({ DATABASE_URL: databaseUrl!, RAZORPAY_WEBHOOK_SECRET: 'test_webhook_secret_16', NODE_ENV: 'test' });
+    const app = await buildApp({ config, db: pool, probeDb: async () => ({ ok: true, latencyMs: 1 }), orchestrator, llm: new StubLlmClient(), logger: false });
+    try {
+      const all = await app.inject({ method: 'GET', url: '/api/v1/compliance/flags' });
+      expect(all.statusCode).toBe(200);
+      const rows = all.json() as { id: string; product_id: string; product_name: string; product_description: string; evidence_span: string }[];
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ product_id: 'prod_flag_1', product_name: 'Lucky Draw Bundle' });
+      // The page highlights the span inside this text, so the span must appear in it verbatim.
+      expect(rows[0]!.product_description).toContain(rows[0]!.evidence_span);
+      const filtered = await app.inject({ method: 'GET', url: '/api/v1/compliance/flags?status=open&risk=prohibited' });
+      expect((filtered.json() as unknown[]).length).toBe(1);
+      const none = await app.inject({ method: 'GET', url: '/api/v1/compliance/flags?status=resolved' });
+      expect((none.json() as unknown[]).length).toBe(0);
+      // The status decision answers with the same shape, so the dashboard can replace the row it is showing.
+      const decided = await app.inject({ method: 'POST', url: `/api/v1/compliance/flags/${rows[0]!.id}/status`, payload: { status: 'acknowledged', actor: 'human:test' } });
+      expect(decided.statusCode).toBe(200);
+      expect((decided.json() as { flag: Record<string, unknown> }).flag).toMatchObject({
+        status: 'acknowledged',
+        reviewed_by: 'human:test',
+        product_name: 'Lucky Draw Bundle',
+        product_description: 'Lottery ticket bundle with a chance to win a cash prize.',
+      });
+    } finally {
+      await app.close();
+    }
+  });
+
 });

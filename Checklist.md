@@ -691,14 +691,14 @@ All arithmetic in integer paise with `Math.ceil` toward the merchant; unit tests
 
 ---
 
-### Task 20: Ask Aegis + Compliance pages
+### Task 20: Ask Aegis + Compliance pages — **DONE by Claude (2026-09-06)**
 
 **Files.** `app/ask/page.tsx`, `components/ask/{AskComposer,AnswerCard,SqlBlock,ResultTable,ForecastChart,History}.tsx`, `app/compliance/page.tsx`, `components/compliance/{FlagList,FlagCard,EvidenceHighlight,RiskBadge,ScanButton}.tsx`. Charts: a small hand-rolled SVG line chart (no chart library; record in `Decisions.md` if you add one).
 
 **Steps.**
-- [ ] 20.1 Ask: `GlowInput` composer with 4 suggested questions (chips); answer card shows: intent, generated SQL (`SqlBlock` with light syntax colouring, always visible even on validation failure), validation verdict (✓ or the error list), `ResultTable` (sticky header, horizontal scroll inside the card), NL summary (labelled AI), latency/provider footer; forecast questions render `ForecastChart` (history line, forecast line, shaded band, method label `ols+ma7`) with numbers in a table below for accessibility. History from `GET /api/v1/ask/history`.
-- [ ] 20.2 Compliance: flags grouped by `risk_level` (prohibited → none), `EvidenceHighlight` wraps the evidence span in the description with `<mark>`, keyword vs LLM agreement badge, `needs_review` and degraded badges, actions acknowledge / resolve / false positive (`POST …/status`), "Run scan" button with run progress via SSE `compliance.flag`.
-- [ ] 20.3 Commit `feat(t20): ask aegis and compliance pages`.
+- [x] 20.1 Ask: `GlowInput` composer with 4 suggested questions (chips); answer card shows: intent, generated SQL (`SqlBlock` with light syntax colouring, always visible even on validation failure), validation verdict (✓ or the error list), `ResultTable` (sticky header, horizontal scroll inside the card), NL summary (labelled AI), latency/provider footer; forecast questions render `ForecastChart` (history line, forecast line, shaded band, method label `ols+ma7`) with numbers in a table below for accessibility. History from `GET /api/v1/ask/history`.
+- [x] 20.2 Compliance: flags grouped by `risk_level` (prohibited → none), `EvidenceHighlight` wraps the evidence span in the description with `<mark>`, keyword vs LLM agreement badge, `needs_review` and degraded badges, actions acknowledge / resolve / false positive (`POST …/status`), "Run scan" button with run progress via SSE `compliance.flag`.
+- [x] 20.3 Commit `feat(t20): ask aegis and compliance pages`.
 
 **Verify/Docs.** `Bug-Feature.md` F-022.
 

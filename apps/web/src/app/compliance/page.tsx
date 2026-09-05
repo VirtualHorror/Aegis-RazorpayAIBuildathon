@@ -1,15 +1,21 @@
 import type { Metadata } from "next";
-import { EmptyState } from "@/components/ui/EmptyState";
+import { FlagList } from "@/components/compliance/FlagList";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { api, describeFailure } from "@/lib/api";
 
 export const metadata: Metadata = { title: "Compliance" };
+export const dynamic = "force-dynamic";
 
-/** Placeholder route (Task 17 step 17.6); the real page lands in Task 20. */
-export default function Page() {
+/** Catalog risk with the evidence span highlighted in the product's own words (Checklist 20.2). */
+export default async function CompliancePage() {
+  const flags = await api.complianceFlags();
   return (
     <>
-      <PageHeader title="Compliance" description="Catalog copy that could breach payment rules, with the evidence highlighted." />
-      <EmptyState title="Not built yet" body="The flag list arrives with Task 20." />
+      <PageHeader
+        title="Compliance"
+        description="Catalog copy that could breach payment rules. A fixed keyword list runs first, a fast model classifies second, and every quoted span is checked against the product's own words."
+      />
+      <FlagList initialFlags={flags.ok ? flags.data : []} error={flags.ok ? null : describeFailure(flags)} />
     </>
   );
 }

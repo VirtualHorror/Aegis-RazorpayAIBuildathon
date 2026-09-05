@@ -15,9 +15,13 @@ export function EmptyState({ title, body, action, backdrop, compact = false, cla
   return (
     <div className={`card relative overflow-hidden text-center ${compact ? "px-4 py-8" : "px-6 py-16"} ${className}`}>
       {backdrop ? (
-        <div aria-hidden className="pointer-events-none absolute inset-0">
-          {backdrop}
-        </div>
+        <>
+          <div aria-hidden className="pointer-events-none absolute inset-0">
+            {backdrop}
+          </div>
+          {/* The text must stay readable over the pattern: a radial scrim of the card's own surface, never a tint. */}
+          <div aria-hidden className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,var(--surface)_35%,transparent_75%)]" />
+        </>
       ) : null}
       <div className="relative mx-auto max-w-md">
         <h3 className="text-sm font-medium">{title}</h3>
