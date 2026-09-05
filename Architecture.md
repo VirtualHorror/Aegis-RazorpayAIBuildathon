@@ -143,7 +143,15 @@ export interface ExecutionResult {
   result: Record<string, unknown>;
   outbound?: OutboundMessageDraft;        // persisted to outbound_messages with status 'simulated_sent'
   ledger?: LedgerEntryDraft[];            // persisted to ledger_entries
+  entityUpdates?: readonly EntityStateUpdate[]; // applied after actions is locked, with optimistic expectations
   error?: string;
+}
+
+export interface EntityStateUpdate {
+  table: 'subscriptions' | 'invoices' | 'disputes';
+  id: string;
+  set: Record<string, string | number | boolean | null>;
+  expect?: Record<string, string | number | null>;
 }
 
 export interface ActionModule {
@@ -154,6 +162,7 @@ export interface ActionModule {
   propose(ctx: EventContext): Promise<ActionProposal | null>;             // may call LLM for TEXT only
   guard(proposal: ActionProposal, ctx: EventContext): GuardResult;        // pure, no I/O
   execute(action: ActionRow, ctx: EventContext, deps: ExecutionDeps): Promise<ExecutionResult>;
+  onProposed?(action: ActionRow, ctx: EventContext, db: Db): Promise<void>;
   compensate?(action: ActionRow, deps: ExecutionDeps): Promise<void>;     // undo (Rollback.md)
 }
 
@@ -291,4 +300,5 @@ Next.js 16 App Router, Tailwind 4, `next-themes` (system default + manual toggle
 | Task 7 — diagnostician (hints → LLM → cross-check → fallback) | **done by Codex, verified by Claude** (see `Checklist.md` T7, `TestChecklist.md` §T7, F-009, D-045–D-047; C-A6 proved by an ordering test, C-A7 re-proved on a real projection row, which found B-010; B-009 transport fixed in T8) |
 | Task 8 — EventOrchestrator, action audit, and SSE bus | **implemented and green by Codex** (see `Checklist.md` T8, `TestChecklist.md` §T8, F-010, D-049–D-050; deterministic routing/guardrails, prior-failure query, action idempotency, worker chaos propagation, and SSE framing are in place) |
 | Task 9 — CheckoutRecovery module | **implemented and green by Codex** (see `Checklist.md` T9, `TestChecklist.md` §T9, F-011; deterministic payment retry links, localized templates, masked WhatsApp payloads, and pure guards are in place) |
+| Task 10 — SubscriptionSalvager module | **implemented** (dunning FSM, deterministic retry worker, synthetic orchestration, guarded recovery) |
 | Everything else | planned; see `Checklist.md` and the Status column in `Bug-Feature.md` |

@@ -4,7 +4,7 @@ import { insertAuditLog } from '../db/repos/audit';
 import { enqueue } from '../db/repos/jobs';
 import { insertLedgerEntry } from '../db/repos/ledger';
 import { insertOutboundMessage } from '../db/repos/outbound-messages';
-import type { ActionModule, ActionRow, EventContext, ExecutionDeps, ExecutionResult } from './types';
+import type { ActionModule, ActionRow, EntityStateUpdate, EventContext, ExecutionDeps, ExecutionResult } from './types';
 import type { EventBus } from '../bus/event-bus';
 
 export interface ExecuteActionInput {
@@ -21,6 +21,16 @@ export interface ExecuteActionInput {
 const executionsInFlight = new WeakMap<pg.Pool, Map<string, Promise<ExecutionResult | null>>>();
 
 type TransactionClientCallback<T> = (tx: pg.PoolClient) => Promise<T>;
+
+const ENTITY_UPDATE_COLUMNS = {
+  subscriptions: ['salvage_state', 'retry_count', 'next_retry_at', 'notes'],
+  invoices: ['negotiation_state', 'negotiation_round', 'current_offer_paise', 'notes'],
+  disputes: ['status', 'phase'],
+} as const satisfies Record<EntityStateUpdate['table'], readonly string[]>;
+
+class EntityStateUpdateConflictError extends Error {
+  override name = 'EntityStateUpdateConflictError';
+}
 
 /**
  * Execute one approved action with a two-phase database boundary.
@@ -81,39 +91,130 @@ async function executeActionUnlocked(input: ExecuteActionInput): Promise<Executi
       };
     }
 
+    let effectiveExecution = execution;
     const persisted = await withClientTransaction(lockClient, async (tx) => {
       const current = await getActionForUpdate(tx, actionId);
       if (!current) throw new Error(`action ${actionId} disappeared during execution`);
       if (current.status === 'executed') return { action: current, duplicate: true };
       if (current.status !== 'approved') throw new Error(`action ${actionId} changed to ${current.status} during execution`);
 
-      if (execution.outbound) await insertOutboundMessage(tx, actionId, execution.outbound);
-      for (const ledger of execution.ledger ?? []) await insertLedgerEntry(tx, { ...ledger, refId: ledger.refId || actionId });
+      // Intent: optimistic entity expectations turn concurrent action attempts into an auditable failed action rather
+      // than allowing a second retry/message to advance the projection twice. The action row is already locked here,
+      // so this follows the global `actions -> entity` lock order (C-C3).
+      // Flow: lock/check every declarative update -> on conflict mark this action failed -> otherwise persist all effects.
       if (execution.status === 'executed') {
+        try {
+          for (const update of execution.entityUpdates ?? []) await applyEntityStateUpdate(tx, update);
+        } catch (error) {
+          if (!(error instanceof EntityStateUpdateConflictError)) throw error;
+          effectiveExecution = {
+            status: 'failed',
+            result: { ...execution.result, entityUpdateConflict: true },
+            error: error.message,
+          };
+        }
+      }
+
+      if (effectiveExecution.status === 'executed' && effectiveExecution.outbound) {
+        await insertOutboundMessage(tx, actionId, effectiveExecution.outbound);
+      }
+      if (effectiveExecution.status === 'executed') {
+        for (const ledger of effectiveExecution.ledger ?? []) await insertLedgerEntry(tx, { ...ledger, refId: ledger.refId || actionId });
         const followUp = followUpFromProposal(current.proposal);
         if (followUp) await enqueue(tx, followUp);
       }
-      const updated = await markActionExecution(tx, actionId, execution.status, execution.result, execution.error ?? null);
+      const updated = await markActionExecution(tx, actionId, effectiveExecution.status, effectiveExecution.result, effectiveExecution.error ?? null);
       if (!updated) throw new Error(`action ${actionId} execution update returned no row`);
       await insertAuditLog(tx, {
         actor: `module:${input.module.name}`,
-        action: execution.status === 'executed' ? 'action.executed' : 'action.failed',
+        action: effectiveExecution.status === 'executed' ? 'action.executed' : 'action.failed',
         entityType: updated.entity_type,
         entityId: updated.entity_id,
         before: current,
         after: updated,
-        metadata: { idempotency_key: updated.idempotency_key, error: execution.error ?? null },
+        metadata: { idempotency_key: updated.idempotency_key, error: effectiveExecution.error ?? null },
       });
       return { action: updated, duplicate: false };
     });
 
     if (!persisted.duplicate) {
-      const statusEvent = execution.status === 'executed' ? 'action.executed' : 'action.failed';
-      input.bus.publish(statusEvent, { actionId, action: persisted.action, result: execution.result, error: execution.error });
-      if (execution.outbound) input.bus.publish('message.simulated_sent', { actionId, message: execution.outbound });
+      const statusEvent = effectiveExecution.status === 'executed' ? 'action.executed' : 'action.failed';
+      input.bus.publish(statusEvent, { actionId, action: persisted.action, result: effectiveExecution.result, error: effectiveExecution.error });
+      if (effectiveExecution.status === 'executed' && effectiveExecution.outbound) {
+        input.bus.publish('message.simulated_sent', { actionId, message: effectiveExecution.outbound });
+      }
     }
-    return execution;
+    return effectiveExecution;
   });
+}
+
+/**
+ * Apply one module-declared projection update while the action transaction owns the entity lock.
+ * Intent: table/column names are closed at compile time and runtime; arbitrary module input must never become SQL.
+ * Flow: validate scalar fields -> SELECT the target FOR UPDATE -> compare optimistic expectations -> UPDATE allowlisted
+ *       columns using parameters. A missing row is a hard failure, not an implicit insert/reservation.
+ */
+async function applyEntityStateUpdate(tx: pg.PoolClient, update: EntityStateUpdate): Promise<void> {
+  if (typeof update.id !== 'string' || update.id.trim().length === 0) throw new TypeError('entity update id must be non-empty');
+  const columns = ENTITY_UPDATE_COLUMNS[update.table];
+  if (!columns) throw new TypeError(`entity update table is unsupported: ${String(update.table)}`);
+  if (!isRecord(update.set) || Object.keys(update.set).length === 0) throw new TypeError('entity update set must be non-empty');
+  const setEntries = Object.entries(update.set);
+  for (const [column, value] of setEntries) {
+    assertEntityColumn(columns, column);
+    assertEntityScalar(value, `entity update ${update.table}.${column}`);
+  }
+  if (update.expect !== undefined) {
+    if (!isRecord(update.expect)) throw new TypeError('entity update expect must be an object');
+    for (const [column, value] of Object.entries(update.expect)) {
+      assertEntityColumn(columns, column);
+      if (value !== null && typeof value !== 'string' && typeof value !== 'number') {
+        throw new TypeError(`entity update expectation ${update.table}.${column} must be string, number, or null`);
+      }
+    }
+  }
+
+  const currentResult = await tx.query<Record<string, unknown>>(
+    `SELECT ${columns.map((column) => `"${column}"`).join(', ')} FROM ${update.table} WHERE id = $1 FOR UPDATE`,
+    [update.id],
+  );
+  const current = currentResult.rows[0];
+  if (!current) throw new EntityStateUpdateConflictError(`${update.table} ${update.id} disappeared before execution`);
+  for (const [column, expected] of Object.entries(update.expect ?? {})) {
+    if (!sameEntityScalar(current[column], expected)) {
+      throw new EntityStateUpdateConflictError(
+        `${update.table} ${update.id} expectation failed for ${column}: expected ${String(expected)}, got ${String(current[column])}`,
+      );
+    }
+  }
+
+  const values: unknown[] = [update.id];
+  const assignments = setEntries.map(([column, value], index) => {
+    values.push(value);
+    return `"${column}" = $${index + 2}`;
+  });
+  await tx.query(`UPDATE ${update.table} SET ${assignments.join(', ')}, updated_at = now() WHERE id = $1`, values);
+}
+
+function assertEntityColumn(columns: readonly string[], column: string): void {
+  if (!columns.includes(column)) throw new TypeError(`entity update column is not allowlisted: ${column}`);
+}
+
+function assertEntityScalar(value: unknown, label: string): void {
+  if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
+  if (typeof value === 'number' && Number.isSafeInteger(value)) return;
+  throw new TypeError(`${label} must be a string, safe integer, boolean, or null`);
+}
+
+function sameEntityScalar(actual: unknown, expected: string | number | null): boolean {
+  if (expected === null) return actual === null || actual === undefined;
+  if (actual === null || actual === undefined) return false;
+  if (typeof expected === 'number') return Number(actual) === expected;
+  return String(actual) === expected;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 interface PersistedFollowUp {

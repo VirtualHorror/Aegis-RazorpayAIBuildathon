@@ -32,7 +32,10 @@ export interface JobHandlerContext {
   logger: WorkerLogger;
   workerId: string;
   /** Optional orchestrator supplied by the production composition; omitted by projection-only tests. */
-  orchestrator?: { handle(eventId: string, workerId: string): Promise<unknown> };
+  orchestrator?: {
+    handle(eventId: string, workerId: string): Promise<unknown>;
+    handleSynthetic?(input: { kind: 'dunning_step'; subscriptionId: string }): Promise<unknown>;
+  };
 }
 
 export interface WorkerPools {

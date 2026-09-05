@@ -285,3 +285,7 @@
 **Options.** (a) keep one handoff per task (seven review round-trips, safest bisect); (b) one continuous run landing all seven in one commit (fast, but one red task blocks everything); (c) one continuous run with **one commit per task**, each with its own tests, verified as a batch.
 **Choice.** (c), on the project owner's explicit instruction. `HANDOFF14.md` carries all seven tasks; the implementing agent still commits each task separately using the checklist's exact commit message, so bisectability survives the batching.
 **Consequences.** C-G1 is knowingly relaxed for this one sprint and recorded here rather than edited out of `Constraints.md`. Verification tags `task-10-done` … `task-16-done` per task and re-hands only the tasks that come back RED.
+
+### D-053 · Declarative entity updates and proposal hooks (2026-09-05)
+
+Action modules execute outside row locks, including any language-model call. Projection mutations therefore return a closed `EntityStateUpdate` list; `executeAction` locks `actions` first, then the allowlisted entity row, checks optional expectations, and applies the update atomically with action effects. The optional `onProposed` hook runs only after a new action row commits, allowing evidence packets to be persisted without making `propose` side-effecting. Synthetic dunning signals use the same proposal, guard, execution and audit path.

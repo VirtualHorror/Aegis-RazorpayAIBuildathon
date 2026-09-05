@@ -464,7 +464,7 @@ Code review performed alongside the run (no changes were required):
   calls `insertDiagnosis` on the pool *after* the model call; `EventOrchestrator.ts:117-129` commits the projection
   before diagnosing. Zero LLM calls hold a row lock (C-A2/C-A6).
 
-## T10–T12 — modules (acceptance, pending)
+## T10–T12 — modules (T10 green; T11–T12 pending)
 
 ```bash
 pnpm --filter @aegis/api test -- modules
@@ -474,6 +474,8 @@ pnpm --filter @aegis/api test -- modules
 # chargeback_evidence: packet contains all sections; review_status requires_human_review; never auto-submitted
 pnpm sim all && psql $DATABASE_URL -c "select module,status,count(*) from actions group by 1,2 order by 1,2"
 ```
+
+T10 focused command: `pnpm --filter @aegis/api exec vitest run src/modules/subscription-salvager --no-file-parallelism --maxWorkers=1` -> 2 files / 6 tests passed.
 
 ## T13 — approvals + ledger + metrics (acceptance, pending)
 

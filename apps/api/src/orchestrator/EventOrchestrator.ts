@@ -13,6 +13,7 @@ import { applyProjection } from './projections';
 import { routeFor, type EventRoute } from './routing';
 import { executeAction } from './execute';
 import type { ActionModule, ActionProposal, ActionRow, ActionStatus, EventContext, GuardRule, Logger } from './types';
+import type { EntitySnapshot } from './entity';
 
 const NOOP_LOGGER: Logger = Object.freeze({ info: () => undefined, warn: () => undefined, error: () => undefined, debug: () => undefined });
 
@@ -33,6 +34,11 @@ export interface OrchestrationResult {
   readonly entity?: Awaited<ReturnType<typeof applyProjection>>;
   readonly diagnosis?: Diagnosis | null;
   readonly actions: readonly ActionRow[];
+}
+
+export interface SyntheticDunningInput {
+  readonly kind: 'dunning_step';
+  readonly subscriptionId: string;
 }
 
 interface PersistedEvent extends WebhookEventRow {
@@ -147,9 +153,61 @@ export class EventOrchestrator {
 
     const config = await loadGuardrailConfig(this.db);
     const ctx: EventContext = { event, payload, entity, diagnosis, config, now, logger: this.logger };
+    const actions = await this.runActionPath(event.event_id, ctx, diagnosis, now);
+
+    await this.markProcessed(event, workerId, actions);
+    return { eventId, status: 'processed', route, entity, diagnosis, actions };
+  }
+
+  /**
+   * Process one synthetic worker signal through the same action path as a webhook.
+   * Intent: scheduled dunning retries must retain guardrails, idempotency, and audit rows instead of mutating a
+   * subscription directly from a queue handler. No model call is needed for this deterministic signal.
+   * Flow: lock/read the current subscription snapshot -> create/reuse a durable synthetic event -> load guardrails ->
+   *       run module propose/guard/persist/execute exactly as `handle` does.
+   */
+  async handleSynthetic(input: SyntheticDunningInput): Promise<OrchestrationResult> {
+    const now = this.clock();
+    const snapshot = await loadSyntheticSubscription(this.db, input.subscriptionId);
+    if (!snapshot) throw new Error(`subscription ${input.subscriptionId} not found`);
+    const eventType = snapshot.row.status === 'halted' ? 'subscription.halted' : 'subscription.pending';
+    const eventId = `synthetic:dunning_step:${input.subscriptionId}:${String(snapshot.row.retry_count ?? 0)}`;
+    const payload = RazorpayWebhookSchema.parse({
+      entity: 'event',
+      event: eventType,
+      contains: ['subscription'],
+      payload: { subscription: { entity: { entity: 'subscription', id: input.subscriptionId, status: snapshot.row.status, amount: snapshot.row.amount_paise, customer_id: snapshot.row.customer_id, notes: { synthetic_dunning: true } } } },
+      created_at: Math.floor(now.getTime() / 1_000),
+    });
+    await withTransaction(this.db, async (tx) => {
+      await tx.query(
+        `INSERT INTO webhook_events (event_id, event_type, payload, payload_sha256, signature_valid, rzp_created_at, status)
+         VALUES ($1, $2, $3::jsonb, 'synthetic', true, $4, 'processing') ON CONFLICT (event_id) DO NOTHING`,
+        [eventId, eventType, JSON.stringify(payload), now],
+      );
+    });
+    const event: PersistedEvent = { event_id: eventId, event_type: eventType, payload, signature_valid: true, rzp_created_at: now, status: 'processing' };
+    const config = await loadGuardrailConfig(this.db);
+    const diagnosis: Diagnosis = {
+      id: `skipped:${eventId}`,
+      rootCause: 'SUBSCRIPTION_MANDATE_FAILED',
+      strategy: 'SUBSCRIPTION_DUNNING',
+      confidence: 1,
+      rationale: 'Scheduled dunning retry is a deterministic worker signal.',
+      degraded: false,
+      crossCheck: { overridden: false, notes: [] },
+      provider: 'rules',
+      model: 'rules-v1',
+    };
+    const ctx: EventContext = { event, payload, entity: snapshot, diagnosis, config, now, logger: this.logger };
+    const actions = await this.runActionPath(eventId, ctx, diagnosis, now);
+    return { eventId, status: 'processed', route: { entity: 'subscription', diagnose: false }, entity: snapshot, diagnosis, actions };
+  }
+
+  private async runActionPath(eventId: string, ctx: EventContext, diagnosis: Diagnosis | null, now: Date): Promise<ActionRow[]> {
     const actions: ActionRow[] = [];
     for (const module of this.modules) {
-      if (!module.handles.includes(event.event_type) || !module.canHandle(ctx)) continue;
+      if (!module.handles.includes(ctx.event.event_type) || !module.canHandle(ctx)) continue;
       const proposal = await module.propose(ctx);
       if (proposal === null) {
         this.logger.info({ event_id: eventId, module: module.name }, 'action module proposed no action');
@@ -160,14 +218,14 @@ export class EventOrchestrator {
       const bounds = [...moduleGuard.rules, ...globalRules];
       const guardPass = moduleGuard.pass && globalRules.every((rule) => rule.pass);
       const failedRule = bounds.find((rule) => !rule.pass);
-      const status = !guardPass
+      const status: ActionStatus = !guardPass
         ? 'blocked'
-        : proposal.requiresApproval || -proposal.moneyImpactPaise > config.auto_approve_limit_paise
+        : proposal.requiresApproval || -proposal.moneyImpactPaise > ctx.config.auto_approve_limit_paise
           ? 'pending_approval'
           : 'approved';
       const globalFailure = globalRules.find((rule) => !rule.pass);
       const reason = !guardPass ? globalFailure?.rule ?? moduleGuard.blockedReason ?? failedRule?.rule ?? 'guard_failed' : null;
-      const action = await this.persistProposal(proposal, event.event_id, diagnosis, bounds, status, reason);
+      const action = await this.persistProposal(proposal, eventId, diagnosis, bounds, status, reason);
       if (!action) {
         this.logger.info({ event_id: eventId, idempotency_key: proposal.idempotencyKey }, 'duplicate action proposal skipped');
         const existing = await getActionByIdempotencyKey(this.db, proposal.idempotencyKey);
@@ -179,20 +237,17 @@ export class EventOrchestrator {
         continue;
       }
       actions.push(action);
+      await module.onProposed?.(action, ctx, this.db);
       this.bus.publish('action.proposed', { eventId, action });
-      if (status === 'blocked') {
-        this.bus.publish('action.blocked', { eventId, action, reason });
-      } else if (status === 'pending_approval') {
-        this.bus.publish('action.pending_approval', { eventId, action });
-      } else {
+      if (status === 'blocked') this.bus.publish('action.blocked', { eventId, action, reason });
+      else if (status === 'pending_approval') this.bus.publish('action.pending_approval', { eventId, action });
+      else {
         await executeAction({ db: this.db, action, module, ctx, bus: this.bus, llm: this.llm, logger: this.logger, now });
         const executed = await getAction(this.db, action.id);
         if (executed) actions[actions.length - 1] = executed;
       }
     }
-
-    await this.markProcessed(event, workerId, actions);
-    return { eventId, status: 'processed', route, entity, diagnosis, actions };
+    return actions;
   }
 
   private async loadAndMarkProcessing(eventId: string): Promise<PersistedEvent> {
@@ -281,6 +336,22 @@ export class EventOrchestrator {
     });
     this.bus.publish('event.processed', { eventId: event.event_id, status: 'processed', actionCount: actions.length });
   }
+}
+
+async function loadSyntheticSubscription(db: pg.Pool, subscriptionId: string): Promise<EntitySnapshot | null> {
+  const result = await db.query<Record<string, unknown>>('SELECT * FROM subscriptions WHERE id = $1', [subscriptionId]);
+  const row = result.rows[0];
+  if (!row || typeof row.id !== 'string') return null;
+  const customerId = typeof row.customer_id === 'string' ? row.customer_id : null;
+  const customerResult = customerId
+    ? await db.query<Record<string, unknown>>('SELECT id, name, email, contact, country, locale, opted_out, notes, created_at, updated_at FROM customers WHERE id = $1', [customerId])
+    : { rows: [] as Record<string, unknown>[] };
+  return {
+    type: 'subscription',
+    row: { ...row, id: row.id, version: typeof row.version === 'number' ? row.version : Number(row.version ?? 1) },
+    customer: (customerResult.rows[0] as EntitySnapshot['customer'] | undefined) ?? null,
+    applied: true,
+  };
 }
 
 function isOptions(value: EventOrchestratorOptions | pg.Pool): value is EventOrchestratorOptions {

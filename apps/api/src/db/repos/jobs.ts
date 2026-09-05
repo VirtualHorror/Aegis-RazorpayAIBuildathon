@@ -1,5 +1,7 @@
 import type pg from 'pg';
 
+type QueryDatabase = pg.Pool | pg.PoolClient;
+
 export interface EnqueueInput {
   kind: string;
   payload: Record<string, unknown>;
@@ -28,3 +30,15 @@ export async function enqueue(tx: pg.PoolClient, input: EnqueueInput): Promise<E
   const id = result.rows[0]?.id;
   return { inserted: result.rowCount === 1 && id !== undefined, id: id ?? null };
 }
+
+/** Cancel queued follow-ups for a terminal entity state using their stable dedupe-key prefix. */
+export async function cancelJobsByDedupePrefix(db: QueryDatabase, prefix: string): Promise<number> {
+  const result = await db.query(
+    `UPDATE jobs SET status = 'cancelled', updated_at = now()
+     WHERE status = 'queued' AND dedupe_key LIKE $1 || '%'`,
+    [prefix],
+  );
+  return result.rowCount ?? 0;
+}
+
+export const cancelPendingJobsByDedupePrefix = cancelJobsByDedupePrefix;

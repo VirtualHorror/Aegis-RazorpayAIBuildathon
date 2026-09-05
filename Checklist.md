@@ -498,13 +498,13 @@ export function nextSalvageState(current: SalvageState, ev: SalvageEvent, retryC
 Transition table (implement + comment): `none --failure_observed→ retry_scheduled`; `retry_scheduled --retry_due→ retrying`; `retrying --retry_failed→ (retryCount < max ? retry_scheduled : churned)`; `retry_scheduled|retrying|offer_sent --payment_succeeded→ recovered`; `any --escalate→ escalated`; `recovered|churned|escalated` are terminal (return null for everything except `payment_succeeded` on churned → recovered, which is allowed and logged).
 
 **Steps.**
-- [ ] 10.1 `propose` on failure: step `n = retry_count + 1`; `runAt = now + dunning_schedule_hours[n-1]`; WhatsApp template `subscription_retry_v1` (locale from customer); `scheduleFollowUp = { kind:'dunning_retry', runAt, payload:{subscriptionId, step:n}, dedupeKey:'dunning_retry:<sub>:<n>' }`; `idempotencyKey = subscription_salvager:subscription:<id>:<n>`; `expectedRecoveryPaise = amount`.
-- [ ] 10.2 `guard`: `retry_count < max_dunning_retries` (rule `max_dunning_retries`), `status ∈ {pending, halted}`, not opted out, transition valid.
-- [ ] 10.3 `execute`: transition to `retry_scheduled` (update `subscriptions.salvage_state, retry_count, next_retry_at`), outbound message, enqueue follow-up.
-- [ ] 10.4 `dunning_retry` handler: transition `retrying`; simulate the retry outcome deterministically from `subscriptions.notes.sim_retry_outcomes[step]` (seeded/simulator-controlled), else `retry_failed`; on failure propose the next step through the orchestrator path (call `orchestrator.handleSynthetic({ kind:'dunning_step', subscriptionId })` — add this small entry point) or churn.
-- [ ] 10.5 On `subscription.charged|activated` (routed in T8's table): if `salvage_state` non-terminal → `recovered`, cancel pending `dunning_retry` jobs (`status='cancelled'` by dedupe_key prefix), ledger `recovered_revenue` credit = amount, action row `kind='salvage_recovered'` (money impact 0), bus publish.
-- [ ] 10.6 Tests: exhaustive transition table; max retries → churned; recovered cancels jobs; idempotent re-run of the same step.
-- [ ] 10.7 Commit `feat(t10): subscription salvager dunning state machine`.
+- [x] 10.1 `propose` on failure: step `n = retry_count + 1`; `runAt = now + dunning_schedule_hours[n-1]`; WhatsApp template `subscription_retry_v1` (locale from customer); `scheduleFollowUp = { kind:'dunning_retry', runAt, payload:{subscriptionId, step:n}, dedupeKey:'dunning_retry:<sub>:<n>' }`; `idempotencyKey = subscription_salvager:subscription:<id>:<n>`; `expectedRecoveryPaise = amount`.
+- [x] 10.2 `guard`: `retry_count < max_dunning_retries` (rule `max_dunning_retries`), `status ∈ {pending, halted}`, not opted out, transition valid.
+- [x] 10.3 `execute`: transition to `retry_scheduled` (update `subscriptions.salvage_state, retry_count, next_retry_at`), outbound message, enqueue follow-up.
+- [x] 10.4 `dunning_retry` handler: transition `retrying`; simulate the retry outcome deterministically from `subscriptions.notes.sim_retry_outcomes[step]` (seeded/simulator-controlled), else `retry_failed`; on failure propose the next step through the orchestrator path (call `orchestrator.handleSynthetic({ kind:'dunning_step', subscriptionId })` — add this small entry point) or churn.
+- [x] 10.5 On `subscription.charged|activated` (routed in T8's table): if `salvage_state` non-terminal → `recovered`, cancel pending `dunning_retry` jobs (`status='cancelled'` by dedupe_key prefix), ledger `recovered_revenue` credit = amount, action row `kind='salvage_recovered'` (money impact 0), bus publish.
+- [x] 10.6 Tests: exhaustive transition table; max retries → churned; recovered cancels jobs; idempotent re-run of the same step.
+- [x] 10.7 Commit `feat(t10): subscription salvager dunning state machine`.
 
 **Verify/Docs.** `TestChecklist.md §T9–T12`; `Flow.md` F5; `Bug-Feature.md` F-012.
 

@@ -98,11 +98,26 @@ export interface LedgerEntryDraft {
 }
 
 export interface ExecutionDeps { db: Db; bus: EventBus; llm: LlmClient; now: Date; logger: Logger }
+
+/**
+ * Declarative projection mutation applied by the execution transaction.
+ * Intent: modules execute outside row locks, so state changes travel back as a bounded description that the
+ * orchestrator validates and applies atomically with the action audit/outbox writes (C-A6/C-C3).
+ * Flow: executeAction locks `actions` -> locks this table/id -> checks `expect` -> updates only allowlisted columns.
+ */
+export interface EntityStateUpdate {
+  readonly table: 'subscriptions' | 'invoices' | 'disputes';
+  readonly id: string;
+  readonly set: Record<string, string | number | boolean | null>;
+  readonly expect?: Record<string, string | number | null>;
+}
+
 export interface ExecutionResult {
   status: 'executed' | 'failed';
   result: Record<string, unknown>;
   outbound?: OutboundMessageDraft;
   ledger?: LedgerEntryDraft[];
+  entityUpdates?: readonly EntityStateUpdate[];
   error?: string;
 }
 
@@ -114,6 +129,7 @@ export interface ActionModule {
   propose(ctx: EventContext): Promise<ActionProposal | null>;
   guard(proposal: ActionProposal, ctx: EventContext): GuardResult;
   execute(action: ActionRow, ctx: EventContext, deps: ExecutionDeps): Promise<ExecutionResult>;
+  onProposed?(action: ActionRow, ctx: EventContext, db: Db): Promise<void>;
   compensate?(action: ActionRow, deps: ExecutionDeps): Promise<void>;
 }
 
