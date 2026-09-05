@@ -231,48 +231,71 @@ Defence in depth confirmed by reading the code and the suite, not the handoff: `
 
 Probe rows `order_v4_live` / `pay_v4_live` / `cus_v4_live` (and Codex's `*_task4_live`) remain in the development database as harmless projections; `pnpm db:seed` is unaffected by them.
 
-## T5 — simulator (acceptance, passed 2026-09-05)
+## T5 — simulator (acceptance, passed 2026-09-05; re-run by Claude on port 4061)
 
 ```bash
-pg_isready -h localhost -p 5432
-# localhost:5432 - accepting connections
+pg_isready -h localhost -p 5432                    # localhost:5432 - accepting connections
+pnpm db:status                                     # applied: 0001_init, 0002_readonly_grants, 0003_projection_guards / pending: (none)
 
-(cd apps/api && pnpm exec tsc --noEmit --listFiles | rg 'scripts/simulate\.ts|scripts/sim/(cli|ids|output|scenarios|signer|transport|types|verification)\.ts')
-# ✅ scripts/simulate.ts plus scripts/sim/{cli,ids,output,scenarios,signer,transport,types,verification}.ts
+# Coverage proof — scripts/ is a real part of the typecheck and lint programs, not just green by absence (C-E2, B-003).
+(cd apps/api && pnpm exec tsc --noEmit --listFiles | grep -c 'RazorpayAIBuildathon/scripts/')
+# ✅ 9 — simulate.ts plus sim/{cli,ids,output,scenarios,signer,transport,types,verification}.ts
+(cd apps/api && pnpm exec eslint src test ../../db/seed ../../scripts --max-warnings 0 --format json)
+# ✅ 57 files linted, 9 of them under scripts/, 0 errors 0 warnings
 
 pnpm --filter @aegis/shared exec vitest run src/sim/scenarios.test.ts
-# ✅ Test Files  1 passed (1) · Tests  21 passed (21)
-
+# ✅ Test Files 1 passed · Tests 22 passed (incl. the contended-burst fixture shape)
 pnpm --filter @aegis/api exec vitest run test/sim-signature.test.ts test/app.test.ts
-# ✅ Test Files  2 passed (2) · Tests  5 passed (5), including the production 404 route guard
+# ✅ Test Files 2 passed · Tests 6 passed (signer == ingress HMAC, production 404, dev-route delivery cap)
 
-# API_PORT=4041 NODE_ENV=development AEGIS_WORKER_ENABLED=true pnpm --filter @aegis/api start
-# (owned PID; stopped with kill -TERM <PID> after the probes)
-pnpm sim payment_failed_3ds_intl --dupes 3 --seed 123 --api http://127.0.0.1:4041
-# ✅ four rows; totals accepted=1 duplicate=3 rejected=0 ignored=0 rate_limited=0; p50/p95 printed
+# API_PORT=4061 NODE_ENV=development AEGIS_WORKER_ENABLED=true pnpm --filter @aegis/api start
+# (owned PID, stopped with kill -TERM afterwards; the unrelated process on port 4000 was left alone)
 
-pnpm sim all --seed 321 --api http://127.0.0.1:4041
+pnpm sim all --seed t5-verify-final --api http://127.0.0.1:4061
 # ✅ 14 rows; totals accepted=12 duplicate=0 rejected=1 ignored=1 rate_limited=0
-# ✅ unknown_event is HTTP 200 but durable status=ignored with zero jobs
-# ✅ bad_signature is HTTP 401 and durable event_id starts with unverified:<sha256(raw)>
+# ✅ unknown_event is HTTP 200 but durable status=ignored with zero jobs; bad_signature is HTTP 401 and
+#    bad_signature namespace=unverified:7f8eeaff492ea2139cbb8a435c5620e814436c74ff56ee8165b699c47829c7ef (C-C1, D-031, D-038)
 
-pnpm sim burst --burst 50 --seed 777 --api http://127.0.0.1:4041
-# ✅ 50 distinct events; totals accepted=50; burst verification jobs=50/50 succeeded=50 max_attempts=1; p50/p95 printed
+pnpm sim payment_failed_3ds_intl --dupes 3 --seed t5-verify-dupes --api http://127.0.0.1:4061
+# ✅ totals accepted=1 duplicate=3 rejected=0 ignored=0 rate_limited=0
 
-pnpm sim burst --burst 400 --seed 888 --api http://127.0.0.1:4041
-# ✅ totals accepted=232 duplicate=0 rejected=0 ignored=0 rate_limited=168; 429s are a separate total, not rejected
-# ✅ accepted jobs max_attempts=1; no lock-order regression or deadlock retry observed
+pnpm sim burst --burst 50 --seed t5-verify-b50 --api http://127.0.0.1:4061
+# ✅ totals accepted=50; burst verification jobs=50/50 succeeded=50 max_attempts=1 contended=false
+# ⚠️  contended=false is the point: SELECT count(DISTINCT order_id), count(DISTINCT customer_id) over those 50 payments
+#     returned 50 and 50, so no two jobs shared a row and max_attempts=1 could not have failed (D-042).
 
-psql "$DATABASE_URL" -c "SELECT status, count(*) FROM webhook_events GROUP BY status ORDER BY status;"
-# ✅ durable event statuses include ignored for unknown_event and no forged evt_ key
-psql "$DATABASE_URL" -c "SELECT status, max(attempts) FROM jobs GROUP BY status ORDER BY status;"
-# ✅ burst jobs are succeeded with max(attempts)=1
+pnpm sim burst --burst 400 --seed t5-verify-b400 --api http://127.0.0.1:4061
+# ✅ totals accepted=232 duplicate=0 rejected=0 ignored=0 rate_limited=168 — 429s are their own total, never rejected (D-040)
+# ✅ latency p50=332ms p95=385ms (over 232 delivered request(s); rate_limited excluded)
+
+pnpm sim burst --burst 40 --contend --seed t5-verify-contend2 --api http://127.0.0.1:4061
+# ✅ totals accepted=40 (all delivered, clear rate window)
+# ❌ simulator error: CRITICAL lock-order regression: burst job evt_000b_064cf66f has attempts=2 — exit 1
+#    This is B-007, an open T4 defect, not a simulator fault: pg_stat_database.deadlocks for `aegis` went 1 → 2 across one
+#    contended run and the transient jobs.last_error captured mid-retry reads `deadlock detected`. Expect exit 1 here until
+#    B-007 is fixed; then this becomes the standing lock-order probe.
+
+pnpm sim payment_failed_3ds_intl --api http://127.0.0.1:4999
+# ✅ simulator error: simulator could not reach http://127.0.0.1:4999/webhooks/razorpay: fetch failed — exit 1
+
+DATABASE_URL='postgres://nobody:nobody@127.0.0.1:5999/nowhere' \
+  pnpm exec tsx ../../scripts/simulate.ts unknown_event --seed t5-nodb-check --api http://127.0.0.1:4061
+# ✅ warning: database classification lookup failed: connect ECONNREFUSED 127.0.0.1:5999
+# ✅ simulator error: could not verify unknown_event ... in webhook_events; DATABASE_URL is required — exit 1 (fails closed)
+
+curl -s -X POST http://127.0.0.1:4061/api/v1/sim/run -H 'content-type: application/json' \
+  -d '{"scenario":"unknown_event","seed":"t5-devroute-check"}'
+# ✅ {"seed":"t5-devroute-check","results":[{"status":"ignored",...}],"totals":{"ignored":1,...}} — same classification as the CLI
+# ✅ NODE_ENV=production → 404 (C-D5, apps/api/src/app.ts:65 registers the plugin only when NODE_ENV !== 'production';
+#    NODE_ENV is a strict zod enum, so a typo fails config load rather than silently mounting the route)
 
 pnpm typecheck && pnpm test && pnpm lint
-# ✅ typecheck/lint include scripts; shared scenario + signer tests and all existing API/web suites pass
+# ✅ typecheck 3 projects · shared 5 files/47 tests · api 10 files/55 tests · lint 3 projects, all including scripts/
 ```
 
-The CLI prints the selected seed so an omitted seed can be replayed. `--dupes N` reuses one body and header set; `--burst N` creates distinct seeded events concurrently. An unreachable `--api` produces one actionable error and a non-zero exit. The development-only `POST /api/v1/sim/run` route uses the same builders and is absent in production (C-D5).
+The CLI prints the selected seed so an omitted seed can be replayed. `--dupes N` reuses one body and header set; `--burst N` creates distinct seeded events concurrently; `--burst N --contend` aims them at one order and one customer. Every original delivery must reach its scenario's terminal state or the run exits non-zero naming the seed to change (D-043) — a seeded event id that already exists in `webhook_events` used to print `accepted=0 duplicate=N` and exit 0, which reads like a result rather than a collision.
+
+Probe rows from these runs (`acc_simulator` payments/orders/customers and ~700 `evt_*` webhook events) remain in the development database as harmless projections; `pnpm db:seed` is unaffected by them.
 
 ## T6 — LLM client (acceptance, pending)
 

@@ -31,12 +31,12 @@ export async function sendScenarios(
 ): Promise<DeliveryResult[]> {
   const originals = options.burst === undefined
     ? await sendSequential(prepared, options.apiUrl, inspector)
-    : await Promise.all(prepared.map((item) => sendOne(item, options.apiUrl, inspector)));
+    : await Promise.all(prepared.map((item) => sendOne(item, options.apiUrl, inspector, true)));
   if (options.dupes === 0) return originals;
 
   const duplicates: DeliveryResult[] = [];
   for (const item of prepared) {
-    for (let index = 0; index < options.dupes; index += 1) duplicates.push(await sendOne(item, options.apiUrl, inspector));
+    for (let index = 0; index < options.dupes; index += 1) duplicates.push(await sendOne(item, options.apiUrl, inspector, false));
   }
   return [...originals, ...duplicates];
 }
@@ -47,11 +47,16 @@ async function sendSequential(
   inspector: DbInspector | undefined,
 ): Promise<DeliveryResult[]> {
   const results: DeliveryResult[] = [];
-  for (const item of prepared) results.push(await sendOne(item, apiUrl, inspector));
+  for (const item of prepared) results.push(await sendOne(item, apiUrl, inspector, true));
   return results;
 }
 
-async function sendOne(item: PreparedScenario, apiUrl: string, inspector: DbInspector | undefined): Promise<DeliveryResult> {
+async function sendOne(
+  item: PreparedScenario,
+  apiUrl: string,
+  inspector: DbInspector | undefined,
+  original: boolean,
+): Promise<DeliveryResult> {
   const started = performance.now();
   let response: Response;
   try {
@@ -72,6 +77,7 @@ async function sendOne(item: PreparedScenario, apiUrl: string, inspector: DbInsp
     category,
     eventId: item.scenario.eventId,
     latencyMs,
+    original,
   };
 }
 

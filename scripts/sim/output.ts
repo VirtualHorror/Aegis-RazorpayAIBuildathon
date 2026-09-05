@@ -22,10 +22,12 @@ export function printResults(results: readonly DeliveryResult[]): void {
     sum[result.category] += 1;
     return sum;
   }, { accepted: 0, duplicate: 0, rejected: 0, ignored: 0, rate_limited: 0 });
-  const latencies = results.map((result) => result.latencyMs);
+  // Intent: a 429 is turned away at the limiter, so its latency measures the throttle rather than the ingress path.
+  // Flow: drop rate-limited rows from the percentile input -> label the line so the exclusion is not silent.
+  const latencies = results.filter((result) => result.category !== 'rate_limited').map((result) => result.latencyMs);
   console.log('');
   console.log(`totals accepted=${totals.accepted} duplicate=${totals.duplicate} rejected=${totals.rejected} ignored=${totals.ignored} rate_limited=${totals.rate_limited}`);
-  console.log(`latency p50=${percentile(latencies, 0.5)}ms p95=${percentile(latencies, 0.95)}ms`);
+  console.log(`latency p50=${percentile(latencies, 0.5)}ms p95=${percentile(latencies, 0.95)}ms (over ${latencies.length} delivered request(s); rate_limited excluded)`);
 }
 
 export function percentile(values: readonly number[], fraction: number): number {

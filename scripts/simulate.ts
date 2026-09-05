@@ -6,7 +6,7 @@ import {
 } from '../packages/shared/src/index';
 import { buildRequestedScenarios, parseCliOptions } from './sim/cli';
 import { printResults } from './sim/output';
-import { createDbInspector, verifyBadSignatureNamespace, verifyBurst } from './sim/verification';
+import { createDbInspector, verifyBadSignatureNamespace, verifyBurst, verifyOriginalDeliveries } from './sim/verification';
 import { prepareScenario, sendScenarios } from './sim/transport';
 
 /**
@@ -26,14 +26,15 @@ async function main(): Promise<void> {
   console.log(`api=${options.apiUrl}`);
 
   const ids = createIdFactory(options.seed);
-  const scenarios = buildRequestedScenarios(options.scenario, options.burst, ids);
+  const scenarios = buildRequestedScenarios(options.scenario, options.burst, ids, options.contend);
   const prepared = scenarios.map((scenario) => prepareScenario(scenario, secret, options.chaos));
   const inspector = createDbInspector();
   try {
     const results = await sendScenarios(prepared, options, inspector);
     printResults(results);
+    verifyOriginalDeliveries(results, options.seed);
     await verifyBadSignatureNamespace(results, prepared, inspector);
-    if (options.burst !== undefined) await verifyBurst(results, prepared, inspector);
+    if (options.burst !== undefined) await verifyBurst(results, prepared, inspector, options.contend);
   } finally {
     await inspector?.close();
   }

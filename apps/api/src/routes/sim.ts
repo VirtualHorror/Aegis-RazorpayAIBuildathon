@@ -4,6 +4,7 @@ import { z } from 'zod';
 import {
   SIM_SCENARIO_NAMES,
   buildAllScenarios,
+  buildContendedBurst,
   buildScenario,
   createIdFactory,
   type SimScenario,
@@ -21,8 +22,14 @@ const SimRequestSchema = z.object({
     z.number().int().nonnegative().max(0xffff_ffff),
     z.string().min(1),
   ]).optional(),
+  contend: z.boolean().optional().default(false),
   chaos: z.literal('llm_down').optional(),
 });
+
+// Intent: one unauthenticated development request must not be able to schedule unbounded work. `burst` and `dupes`
+//         multiply, so their product -- not either bound on its own -- is what has to be capped before anything is sent.
+// Flow: build the fixture list -> reject the request when originals x (1 + dupes) exceeds this -> only then deliver.
+const MAX_SIM_DELIVERIES = 2_000;
 
 export interface SimRouteOptions {
   config: Pick<Config, 'RAZORPAY_WEBHOOK_SECRET'>;
@@ -63,9 +70,18 @@ export const simRoutes: FastifyPluginAsync<SimRouteOptions> = async (app, option
     const ids = createIdFactory(seed);
     let scenarios: readonly SimScenario[];
     try {
-      scenarios = buildRequestedScenarios(input.scenario, input.burst, ids);
+      scenarios = buildRequestedScenarios(input.scenario, input.burst, ids, input.contend);
     } catch (error) {
       await reply.code(400).send({ error: error instanceof Error ? error.message : String(error) });
+      return;
+    }
+
+    const deliveryCount = scenarios.length * (1 + input.dupes);
+    if (deliveryCount > MAX_SIM_DELIVERIES) {
+      await reply.code(400).send({
+        error: 'simulation_too_large',
+        details: `${deliveryCount} deliveries exceeds the ${MAX_SIM_DELIVERIES} limit for this route; use the CLI for larger runs`,
+      });
       return;
     }
 
@@ -83,10 +99,22 @@ export const simRoutes: FastifyPluginAsync<SimRouteOptions> = async (app, option
   });
 };
 
-function buildRequestedScenarios(scenario: string, burst: number | undefined, ids: ReturnType<typeof createIdFactory>): readonly SimScenario[] {
+function buildRequestedScenarios(
+  scenario: string,
+  burst: number | undefined,
+  ids: ReturnType<typeof createIdFactory>,
+  contend: boolean,
+): readonly SimScenario[] {
   if (scenario === 'all') {
     if (burst !== undefined) throw new Error('--burst cannot be combined with the all scenario');
     return buildAllScenarios({ ids });
+  }
+
+  // Intent: keep the route and the CLI on one definition of a contended burst (D-036), including its guard rails.
+  if (contend) {
+    if (burst === undefined) throw new Error('contend only applies to a burst; pass burst');
+    if (scenario !== 'burst') throw new Error('contend applies to the burst scenario, which mixes payment and order events');
+    return buildContendedBurst(burst, { ids });
   }
 
   const requested = scenario === 'burst' ? 'payment_failed_3ds_intl' : scenario;

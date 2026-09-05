@@ -40,6 +40,19 @@ describe('error shape', () => {
 });
 
 describe('simulation route guard', () => {
+  it('refuses a run whose burst and dupes multiply past the route cap', async () => {
+    // Intent: the development route is unauthenticated, and `burst` x `dupes` is what actually decides how much work one
+    //         request schedules -- 10,000 x 1,000 is inside both individual bounds and would wedge the API.
+    // Flow: ask for an oversized run -> expect a 400 before any delivery is injected into the ingress.
+    const response = await (await appWithProbe({ ok: true, latencyMs: 1 })).inject({
+      method: 'POST',
+      url: '/api/v1/sim/run',
+      payload: { scenario: 'burst', burst: 10_000, dupes: 1_000 },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ error: 'simulation_too_large' });
+  });
+
   it('does not mount the simulator in production', async () => {
     const productionConfig = loadConfig({
       DATABASE_URL: 'postgres://aegis:pw@localhost:5432/aegis',

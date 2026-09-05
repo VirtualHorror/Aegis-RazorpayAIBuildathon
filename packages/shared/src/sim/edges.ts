@@ -16,7 +16,7 @@ export function buildOrderPaid(options: ScenarioBuildOptions = {}): SimScenario 
   const ids = idsFor(options);
   const scenarioOptions = { ...options, ids };
   return makeScenario('order_paid', 'order.paid', 'order', {
-    entity: 'order', id: ids.orderId(), amount: 99_900, amount_paid: 99_900, amount_due: 0, currency: 'INR', status: 'paid',
+    entity: 'order', id: options.orderId ?? ids.orderId(), amount: 99_900, amount_paid: 99_900, amount_due: 0, currency: 'INR', status: 'paid',
     receipt: 'sim-order-paid', customer_id: customerFor(scenarioOptions, ids), items: [{ name: 'Aegis demo item', amount: 99_900, quantity: 1 }],
     notes: { locale: 'en-IN' },
   }, scenarioOptions);

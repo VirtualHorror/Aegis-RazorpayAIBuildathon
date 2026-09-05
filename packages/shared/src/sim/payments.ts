@@ -4,7 +4,7 @@ import type { ScenarioBuildOptions, SimScenario } from './types';
 export function buildPaymentFailed3dsIntl(options: ScenarioBuildOptions = {}): SimScenario {
   const ids = idsFor(options);
   const scenarioOptions = { ...options, ids };
-  const orderId = ids.orderId();
+  const orderId = options.orderId ?? ids.orderId();
   const customerId = customerFor(scenarioOptions, ids);
   return makeScenario('payment_failed_3ds_intl', 'payment.failed', 'payment', {
     entity: 'payment', id: ids.paymentId(), amount: 149_900, currency: 'INR', status: 'failed', order_id: orderId,

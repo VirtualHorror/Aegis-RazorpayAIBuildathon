@@ -1,5 +1,6 @@
 import pg from 'pg';
-import type { DbInspector, DeliveryResult, PreparedScenario } from './types';
+import type { DbInspector, DeliveryCategory, DeliveryResult, PreparedScenario } from './types';
+import type { SimSeed } from '../../packages/shared/src/index';
 
 interface DurableEvent {
   readonly status: string;
@@ -32,6 +33,39 @@ export function createDbInspector(): DbInspector | undefined {
   return { pool, close: () => pool.end() };
 }
 
+// Intent: each scenario has exactly one terminal category it is written to produce; anything else means the run did not
+//         test what its name says. A throttle is the one benign exception, and it is already reported on its own line.
+// Flow: name the expected category -> compare it against every original delivery -> report the mismatches together.
+function expectedCategory(scenario: string): DeliveryCategory {
+  if (scenario === 'bad_signature') return 'rejected';
+  if (scenario === 'unknown_event') return 'ignored';
+  return 'accepted';
+}
+
+/**
+ * Verify that every first delivery reached the state its scenario intends.
+ * Intent: a seeded event id that happens to already exist in `webhook_events` comes back `duplicate`, and the run then
+ *         prints `accepted=0 duplicate=N` as though that were the behaviour under test. Evidence the simulator cannot
+ *         vouch for is worse than no evidence, so this exits non-zero instead of printing a table that reads like a pass.
+ * Flow: keep originals only -> allow the scenario's terminal category or a genuine 429 -> otherwise fail with the seed
+ *       to change.
+ */
+export function verifyOriginalDeliveries(results: readonly DeliveryResult[], seed: SimSeed): void {
+  const unexpected = results.filter((result) => {
+    if (!result.original || result.category === 'rate_limited') return false;
+    return result.category !== expectedCategory(result.scenario);
+  });
+  if (unexpected.length === 0) return;
+  const detail = unexpected
+    .map((result) => `${result.scenario} (${result.eventId}) came back ${result.category}, expected ${expectedCategory(result.scenario)}`)
+    .join('; ');
+  const collided = unexpected.some((result) => result.category === 'duplicate');
+  const advice = collided
+    ? ` a seeded event id already exists in webhook_events; rerun with a different --seed (this run used ${String(seed)})`
+    : '';
+  throw new Error(`original delivery did not reach its scenario's terminal state: ${detail}.${advice}`);
+}
+
 /**
  * Verify that forged deliveries use the ingress quarantine namespace.
  * Intent: an invalid signature must never claim a trusted `evt_` idempotency key.
@@ -62,19 +96,27 @@ export async function verifyBadSignatureNamespace(
 
 /**
  * Verify durable worker completion after a concurrent burst.
- * Intent: retries can hide lock-order regressions, so any attempt above one is a critical failure.
- * Flow: query accepted event IDs until every job succeeds -> fail immediately on attempts > 1 -> report the terminal proof.
+ * Intent: retries can hide lock-order regressions, so any attempt above one is a critical failure. `contended` is
+ *         printed with the result because it is what makes that number mean anything: a burst of distinct events shares
+ *         no rows, so PostgreSQL has nothing to deadlock on and `max_attempts=1` holds under any lock order.
+ * Flow: query accepted event IDs until every job succeeds -> fail immediately on attempts > 1 -> report the terminal
+ *       proof together with whether the events actually competed for the same rows.
  */
 export async function verifyBurst(
   results: readonly DeliveryResult[],
   prepared: readonly PreparedScenario[],
   inspector: DbInspector | undefined,
+  contended = false,
 ): Promise<void> {
   if (!inspector) throw new Error('cannot verify burst jobs; DATABASE_URL/DATABASE_URL_TEST is required');
   const acceptedIds = new Set(
     results.filter((result) => result.category === 'accepted').map((result) => result.eventId),
   );
-  if (acceptedIds.size === 0) return;
+  // Intent: a fully throttled burst has nothing to verify, but silence there reads the same as a pass.
+  if (acceptedIds.size === 0) {
+    console.log(`burst verification skipped: no delivery was accepted (${results.length} request(s), all throttled or rejected)`);
+    return;
+  }
   const ids = [...acceptedIds];
   const deadline = Date.now() + 30_000;
   let rows: Array<{ status: string; attempts: number; event_id: string }> = [];
@@ -98,5 +140,5 @@ export async function verifyBurst(
   if (rows.length < ids.length || succeeded < ids.length) {
     throw new Error(`burst verification incomplete: jobs=${rows.length}/${ids.length} succeeded=${succeeded}/${ids.length}`);
   }
-  console.log(`burst verification jobs=${rows.length}/${prepared.length} succeeded=${succeeded} max_attempts=${maxAttempts}`);
+  console.log(`burst verification jobs=${rows.length}/${prepared.length} succeeded=${succeeded} max_attempts=${maxAttempts} contended=${contended}`);
 }

@@ -52,6 +52,8 @@ export interface ScenarioBuildOptions {
   readonly accountId?: string;
   readonly createdAt?: number;
   readonly customerId?: string;
+  /** Pin the order a payment or order fixture names, so a burst can deliberately contend on one parent row. */
+  readonly orderId?: string;
   readonly priorFailureOrderId?: string;
   readonly priorFailureEventId?: string;
   readonly priorFailureCustomerId?: string;

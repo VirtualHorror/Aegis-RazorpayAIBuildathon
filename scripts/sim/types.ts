@@ -17,6 +17,8 @@ export interface DeliveryResult {
   readonly category: DeliveryCategory;
   readonly eventId: string;
   readonly latencyMs: number;
+  /** False for a `--dupes` replay. Only an original is expected to reach its scenario's terminal category. */
+  readonly original: boolean;
 }
 
 export interface Totals {
@@ -31,6 +33,7 @@ export interface CliOptions {
   readonly scenario: string;
   readonly dupes: number;
   readonly burst: number | undefined;
+  readonly contend: boolean;
   readonly seed: SimSeed;
   readonly apiUrl: string;
   readonly chaos: 'llm_down' | undefined;

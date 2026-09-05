@@ -114,6 +114,23 @@ export function buildAllScenarios(options: ScenarioBuildOptions = {}): readonly 
   ];
 }
 
+/**
+ * Build a burst whose events deliberately fight over one order and one customer.
+ * Intent: a plain `--burst N` gives every event fresh natural keys, so no two jobs ever touch the same row and
+ *         `max(attempts)=1` is true whatever the lock order is. B-006 needs an `order.*` and a `payment.*` transaction
+ *         racing for the same order *and* the same customer; only then does a wrong order form the ABBA cycle that
+ *         PostgreSQL aborts with 40P01, which the worker then hides behind a retry.
+ * Flow: allocate one shared order/customer -> alternate `payment.failed` (fresh payment) and `order.paid` -> stagger
+ *       `created_at` so no order event is discarded as stale before it reaches the customer lock.
+ */
+export function buildContendedBurst(count: number, options: ScenarioBuildOptions = {}): readonly SimScenario[] {
+  const ids: SimIdFactory = options.ids ?? createIdFactory(options.seed);
+  const shared: ScenarioBuildOptions = { ...options, ids, orderId: ids.orderId(), customerId: ids.customerId() };
+  return Array.from({ length: count }, (_unused, index) => (index % 2 === 0
+    ? buildPaymentFailed3dsIntl(atOffset(shared, index))
+    : buildOrderPaid(atOffset(shared, index))));
+}
+
 export const buildScenarios = buildAllScenarios;
 
 // Keep these type aliases available to consumers that build a run descriptor before invoking a builder.

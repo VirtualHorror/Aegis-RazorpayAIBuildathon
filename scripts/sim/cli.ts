@@ -3,6 +3,7 @@ import { parseArgs } from 'node:util';
 import {
   SIM_SCENARIO_NAMES,
   buildAllScenarios,
+  buildContendedBurst,
   buildScenario,
 } from '../../packages/shared/src/index';
 import type {
@@ -36,6 +37,7 @@ export function parseCliOptions(): CliOptions {
         seed: { type: 'string' },
         api: { type: 'string' },
         chaos: { type: 'string' },
+        contend: { type: 'boolean' },
         help: { type: 'boolean', short: 'h' },
       },
     });
@@ -56,7 +58,9 @@ export function parseCliOptions(): CliOptions {
   const apiUrl = normalizeApiUrl(optionString(parsed.values.api) ?? DEFAULT_API);
   const chaosValue = optionString(parsed.values.chaos);
   if (chaosValue !== undefined && chaosValue !== 'llm_down') throw new Error(`unsupported chaos mode: ${chaosValue}`);
-  return { scenario, dupes, burst, seed, apiUrl, chaos: chaosValue };
+  const contend = parsed.values.contend === true;
+  if (contend && burst === undefined) throw new Error('--contend only applies to a burst; pass --burst N');
+  return { scenario, dupes, burst, contend, seed, apiUrl, chaos: chaosValue };
 }
 
 function parseSeed(value: string | undefined): SimSeed | undefined {
@@ -113,16 +117,25 @@ function normalizeApiUrl(value: string): string {
 /**
  * Expand a scenario name into the fixtures to deliver.
  * Intent: `all` preserves lifecycle attribution, while burst mode allocates a distinct event for every request.
- * Flow: special aggregate -> burst alias -> named builder with one shared seeded ID factory.
+ *         `--contend` is the opposite choice on purpose: distinct events cannot deadlock, so proving the B-006 lock
+ *         order needs a burst that aims every event at one order and one customer.
+ * Flow: special aggregate -> contended or distinct burst -> named builder with one shared seeded ID factory.
  */
 export function buildRequestedScenarios(
   scenario: string,
   burst: number | undefined,
   ids: ReturnType<typeof createIdFactory>,
+  contend = false,
 ): readonly SimScenario[] {
   if (scenario === 'all') {
     if (burst !== undefined) throw new Error('--burst cannot be combined with the all scenario');
     return buildAllScenarios({ ids, accountId: 'acc_simulator', createdAt: CREATED_AT });
+  }
+
+  if (contend) {
+    if (burst === undefined) throw new Error('--contend only applies to a burst; pass --burst N');
+    if (scenario !== 'burst') throw new Error('--contend applies to the burst scenario, which mixes payment and order events');
+    return buildContendedBurst(burst, { ids, accountId: 'acc_simulator', createdAt: CREATED_AT });
   }
 
   if (scenario === 'burst') {
@@ -140,6 +153,7 @@ function isScenarioName(value: string): value is SimScenarioName {
 }
 
 export function printUsage(): void {
-  console.log('usage: pnpm sim <scenario> [--dupes N] [--burst N] [--seed S] [--api URL] [--chaos llm_down]');
+  console.log('usage: pnpm sim <scenario> [--dupes N] [--burst N] [--contend] [--seed S] [--api URL] [--chaos llm_down]');
+  console.log('--contend: aim every burst event at one order and one customer, so max(attempts)=1 actually proves the lock order');
   console.log(`scenarios: ${[...SIM_SCENARIO_NAMES, 'all', 'burst'].join(', ')}`);
 }
