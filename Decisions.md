@@ -45,6 +45,8 @@
 | D-048 | 2026-09-05 | Reserve absent order identities with a NULL-customer placeholder before customer upserts | accepted |
 | D-049 | 2026-09-05 | Serialize action execution with a session advisory lock while keeping module code outside row-lock transactions | accepted |
 | D-050 | 2026-09-05 | Carry development LLM chaos explicitly on `process_event` jobs and restore it in the worker | accepted |
+| D-051 | 2026-09-05 | Resume approved actions after a worker crash instead of re-proposing them | accepted |
+| D-052 | 2026-09-05 | Batch Tasks 10–16 into one Sprint 2 handoff (deliberate, recorded C-G1 deviation) | accepted |
 
 ---
 
@@ -277,3 +279,9 @@
 **Context.** A worker can commit an auto-approved action row and then exit before `executeAction`. Retrying the same `process_event` projects the duplicate as `entity.applied=false`; simply skipping that projection would leave the approved action orphaned forever.
 **Choice.** On an unapplied retry, query only `actions` for the trigger event with `status='approved'` and resume them through the same advisory-locked `executeAction` path. Idempotency conflicts in an applied retry use the same lookup; blocked, pending, executed, and failed rows remain no-ops.
 **Consequences.** Recovery executes persisted approved work exactly once without proposing a new action, while D-046 still prevents stale deliveries from spending an LLM call or creating a fresh action. Module code remains outside `SELECT ... FOR UPDATE` transactions.
+
+### D-052 · Batch Tasks 10–16 into a single Sprint 2 handoff
+**Context.** C-G1 requires one checklist task per handoff so a red review can be bisected to one task. The build is on a fixed hackathon deadline and T10–T16 are seven largely independent feature slices.
+**Options.** (a) keep one handoff per task (seven review round-trips, safest bisect); (b) one continuous run landing all seven in one commit (fast, but one red task blocks everything); (c) one continuous run with **one commit per task**, each with its own tests, verified as a batch.
+**Choice.** (c), on the project owner's explicit instruction. `HANDOFF14.md` carries all seven tasks; the implementing agent still commits each task separately using the checklist's exact commit message, so bisectability survives the batching.
+**Consequences.** C-G1 is knowingly relaxed for this one sprint and recorded here rather than edited out of `Constraints.md`. Verification tags `task-10-done` … `task-16-done` per task and re-hands only the tasks that come back RED.

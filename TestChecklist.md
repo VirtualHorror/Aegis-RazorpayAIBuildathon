@@ -430,6 +430,40 @@ pnpm --filter @aegis/api exec vitest run src/modules/checkout-recovery/index.tes
 # ✅ The three serial full gates recorded in §T8 also passed (API 31 files / 160 tests; shared 5 files / 47 tests).
 ```
 
+### T8/T9 re-run by Claude (verification, 2026-09-05) — GREEN
+
+```bash
+pg_isready                                   # /var/run/postgresql:5432 - accepting connections
+pnpm db:status                               # applied: 0001_init, 0002_readonly_grants, 0003_projection_guards; pending: (none)
+
+pnpm --filter @aegis/api exec vitest run src/orchestrator src/guardrails src/bus src/modules/checkout-recovery \
+  test/orchestrator.integration.test.ts test/chaos.integration.test.ts src/worker/process-event.test.ts \
+  --no-file-parallelism --maxWorkers=1
+# ✅ Test Files 10 passed (10) · Tests 41 passed (41)
+
+pnpm typecheck && pnpm test && pnpm lint
+# ✅ exit 0 — typecheck 3 projects; shared 5 files / 47 tests; API 31 files / 160 tests; lint 3 projects
+```
+
+Code review performed alongside the run (no changes were required):
+
+- **B-007 lock order.** `shared.ts:lockOrderSlot` (`apps/api/src/orchestrator/projections/shared.ts:96`) locks an existing
+  order, else inserts a NULL-customer placeholder, else re-locks the concurrent winner — so the order identity is always
+  reserved *before* `projectCustomer`. Per-entity sequences match the single global C-C3 order (entity's own row first,
+  then toward the FK root): `payments:68 → orders:82 → customers:83`, `orders:62 → customers:69`,
+  `disputes:91 → payments:100`, `subscriptions:69 → customers:75`, `invoices:71 → customers:77`. No path inverts it, so
+  no ABBA cycle exists. The regression at `projections.test.ts:247` is non-vacuous: `waitForLockWait` throws unless a
+  connection is genuinely blocked on a `Lock` wait event.
+- **B-009 chaos re-entry.** `processEventHandler` (`apps/api/src/worker/process-event.ts:59`) wraps the whole handler in
+  `runProcessEventWithChaos` → `runWithLlmChaos`, and the orchestrator call at `:73` (which owns the only diagnostician
+  path) runs inside that AsyncLocalStorage context. `chaosFromJobPayload` accepts only the literal `llm_down`, and
+  `reconciler.ts:55` persists `chaos` only for that literal, so production job payloads stay `{ eventId }` (C-D5).
+- **No LLM inside locks.** The only transaction sites in the API are `EventOrchestrator` (projection / event status /
+  proposal persistence), `execute.ts` (two short `withClientTransaction` phases *around* `module.execute`),
+  `reconciler.ts`, `process-event.ts`, `db/tx.ts` and `db/migrate.ts`. `Diagnostician.diagnose` opens no transaction and
+  calls `insertDiagnosis` on the pool *after* the model call; `EventOrchestrator.ts:117-129` commits the projection
+  before diagnosing. Zero LLM calls hold a row lock (C-A2/C-A6).
+
 ## T10–T12 — modules (acceptance, pending)
 
 ```bash

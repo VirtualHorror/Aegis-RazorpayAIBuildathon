@@ -440,7 +440,7 @@ export interface Diagnostician { diagnose(input: { event: WebhookEventRow; paylo
 
 ---
 
-### Task 8: EventOrchestrator + ActionModule contract + actions audit + SSE bus
+### Task 8: EventOrchestrator + ActionModule contract + actions audit + SSE bus — **DONE by Codex (2026-09-05) · verified GREEN by Claude (2026-09-05; B-007 and B-009 confirmed fixed, no LLM call inside any transaction)**
 
 **Goal.** The brain: route event → project → diagnose (when needed) → run modules through `propose → guard → persist → (execute | pending_approval | blocked)`, with an in-process event bus streamed over SSE. Ship with a `NoopModule` so the pipeline is testable before real modules exist.
 
@@ -463,7 +463,7 @@ export interface Diagnostician { diagnose(input: { event: WebhookEventRow; paylo
 
 ---
 
-### Task 9: CheckoutRecovery module (localised WhatsApp retry link)
+### Task 9: CheckoutRecovery module (localised WhatsApp retry link) — **DONE by Codex (2026-09-05) · verified GREEN by Claude (2026-09-05)**
 
 **Goal.** For `payment.failed` with strategy `RETRY_LINK_LOCALIZED | RETRY_ALTERNATE_METHOD | CART_RECOVERY_NUDGE`, propose exactly one WhatsApp template message in the customer's locale with a deterministic retry link; guard it; "send" it (persist + log).
 
@@ -483,7 +483,7 @@ export interface Diagnostician { diagnose(input: { event: WebhookEventRow; paylo
 
 ---
 
-### Task 10: SubscriptionSalvager module (dunning state machine)
+### Task 10: SubscriptionSalvager module (dunning state machine) — **UNLOCKED 2026-09-05 (Sprint 2: T10–T16 handed off together in `HANDOFF14.md`)**
 
 **Goal.** On `subscription.pending|halted`, walk a bounded dunning schedule: message + scheduled retry job per step, stop at `max_dunning_retries`, mark `recovered` on `subscription.charged|activated`, `churned` after the last step, `escalated` when the diagnosis says so.
 
