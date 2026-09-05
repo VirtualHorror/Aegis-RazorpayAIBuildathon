@@ -6,6 +6,7 @@ import type { RawBodyRequest } from '../types/fastify';
 import { reconcile, type ReconcileResult } from './reconciler';
 import { verifySignature } from './signature';
 import type pg from 'pg';
+import { runWithLlmChaos } from '../llm/resilient';
 
 export interface IngressEventNotification {
   eventId: string;
@@ -15,7 +16,7 @@ export interface IngressEventNotification {
 }
 
 export interface RazorpayWebhookHandlerOptions {
-  config: Pick<Config, 'RAZORPAY_WEBHOOK_SECRET'>;
+  config: Pick<Config, 'RAZORPAY_WEBHOOK_SECRET'> & Partial<Pick<Config, 'NODE_ENV'>>;
   db: pg.Pool | null;
   onEvent?: (notification: IngressEventNotification) => void | Promise<void>;
 }
@@ -105,6 +106,19 @@ async function reconcileRejected(
  * Flow: raw bytes -> HMAC -> JSON parse -> zod envelope -> transactional reconcile -> post-commit notification -> response.
  */
 export async function handleRazorpayWebhook(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  options: RazorpayWebhookHandlerOptions,
+): Promise<void> {
+  const chaosHeader = headerValue(request.headers['x-aegis-chaos']);
+  const chaos = (options.config.NODE_ENV === 'development' || options.config.NODE_ENV === 'test') && chaosHeader === 'llm_down'
+    ? 'llm_down'
+    : undefined;
+  return runWithLlmChaos(chaos, () => handleRazorpayWebhookInContext(request, reply, options));
+}
+
+/** Handle a request after its development-only chaos context has been installed. */
+async function handleRazorpayWebhookInContext(
   request: FastifyRequest,
   reply: FastifyReply,
   options: RazorpayWebhookHandlerOptions,

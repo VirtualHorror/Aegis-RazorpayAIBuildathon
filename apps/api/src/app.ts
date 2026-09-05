@@ -10,6 +10,9 @@ import { ingressPlugin } from './ingress';
 import type { IngressEventNotification } from './ingress/razorpay-webhook';
 import { healthRoutes } from './routes/health';
 import { simRoutes } from './routes/sim';
+import { systemRoutes } from './routes/system';
+import { createLlmClient } from './llm/factory';
+import type { LlmClient } from './llm/client';
 
 export interface AppDeps {
   config: Config;
@@ -21,13 +24,15 @@ export interface AppDeps {
   onEvent?: (notification: IngressEventNotification) => void | Promise<void>;
   /** Override the logger (tests pass `false`). */
   logger?: FastifyServerOptions['logger'];
+  /** Inject a client in tests or in a larger boot composition; production defaults to the factory. */
+  llm?: LlmClient;
 }
 
 /**
  * Build the Fastify app without listening.
  * Intent: everything (plugins, routes, error shape) is wired here so tests use `app.inject()` on the exact production app.
  * Flow:   logger → CORS (dashboard origin only) → rate limit (600/min default, per-route overrides) →
- *         error/404 handlers → health + encapsulated ingress routes (when a DB pool is supplied).
+ *         error/404 handlers → health + system metadata + encapsulated ingress routes (when a DB pool is supplied).
  */
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const { config } = deps;
@@ -56,6 +61,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   await app.register(healthRoutes, { probeDb: deps.probeDb, version: AEGIS_VERSION });
+  const llm = deps.llm ?? createLlmClient(config, app.log);
+  await app.register(systemRoutes, { llm });
   await app.register(ingressPlugin, {
     prefix: '/webhooks',
     config,

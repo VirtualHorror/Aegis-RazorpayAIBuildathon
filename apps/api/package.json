@@ -9,19 +9,22 @@
     "start": "tsx src/server.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src test ../../db/seed ../../scripts --max-warnings 0",
+    "lint": "eslint src test scripts ../../db/seed ../../scripts --max-warnings 0",
     "db:migrate": "tsx src/db/migrate-cli.ts up",
     "db:migrate:down": "tsx src/db/migrate-cli.ts down",
     "db:status": "tsx src/db/migrate-cli.ts status",
     "db:seed": "tsx ../../db/seed/seed.ts",
-    "sim": "tsx ../../scripts/simulate.ts"
+    "sim": "tsx ../../scripts/simulate.ts",
+    "llm:smoke": "tsx scripts/llm-smoke.ts"
   },
   "dependencies": {
     "@aegis/shared": "workspace:*",
+    "@anthropic-ai/sdk": "~0.123.0",
     "@fastify/cors": "~11.3.0",
     "@fastify/rate-limit": "~11.2.0",
     "dotenv": "~17.4.2",
     "fastify": "~5.12.3",
+    "openai": "~7.10.0",
     "pg": "~8.23.0",
     "zod": "~4.5.4"
   },

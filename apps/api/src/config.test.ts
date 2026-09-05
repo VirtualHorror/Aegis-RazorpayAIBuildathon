@@ -16,6 +16,11 @@ describe('loadConfig', () => {
     expect(cfg.AEGIS_WORKER_ENABLED).toBe(true);
     expect(cfg.WORKER_CONCURRENCY).toBe(4);
     expect(cfg.WORKER_POLL_MS).toBe(500);
+    expect(cfg.AEGIS_LLM_PROVIDER).toBe('auto');
+    expect(cfg.ANTHROPIC_MODEL).toBe('claude-opus-5');
+    expect(cfg.OPENAI_MODEL).toBe('gpt-5.6');
+    expect(cfg.OPENAI_MODEL_FAST).toBe('gpt-5.4-mini');
+    expect(cfg.LLM_TIMEOUT_MS).toBe(20_000);
   });
   it('coerces numbers and booleans from strings', () => {
     const cfg = loadConfig({ ...minimal, API_PORT: '4100', AEGIS_ALLOW_PENDING_MIGRATIONS: 'true' });
@@ -28,5 +33,19 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ ...minimal, API_PORT: '99999' })).toThrow(/API_PORT/);
     expect(() => loadConfig({ ...minimal, WEB_ORIGIN: 'not-a-url' })).toThrow(/WEB_ORIGIN/);
     expect(() => loadConfig({ ...minimal, RAZORPAY_WEBHOOK_SECRET: 'short' })).toThrow(/RAZORPAY_WEBHOOK_SECRET/);
+  });
+
+  it('treats blank optional provider credentials and URLs as absent', () => {
+    const cfg = loadConfig({
+      ...minimal,
+      ANTHROPIC_API_KEY: '',
+      OPENAI_API_KEY: '',
+      OPENAI_API_BASE: '',
+      OPENAI_BASE_URL: '',
+    });
+    expect(cfg.ANTHROPIC_API_KEY).toBeUndefined();
+    expect(cfg.OPENAI_API_KEY).toBeUndefined();
+    expect(cfg.OPENAI_API_BASE).toBeUndefined();
+    expect(cfg.OPENAI_BASE_URL).toBeUndefined();
   });
 });

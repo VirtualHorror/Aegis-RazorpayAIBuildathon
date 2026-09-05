@@ -31,6 +31,14 @@ describe('GET /health', () => {
   });
 });
 
+describe('GET /api/v1/system', () => {
+  it('reports the keyless stub selected by the factory when no provider key is configured', async () => {
+    const res = await (await appWithProbe({ ok: true, latencyMs: 1 })).inject({ method: 'GET', url: '/api/v1/system' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ provider: 'stub', model: 'fixture-v1', modelFast: 'fixture-v1' });
+  });
+});
+
 describe('error shape', () => {
   it('returns a consistent 404 body with a request id', async () => {
     const res = await (await appWithProbe({ ok: true, latencyMs: 1 })).inject({ method: 'GET', url: '/nope' });

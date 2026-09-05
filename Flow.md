@@ -7,7 +7,7 @@
 
 1. `apps/api/src/server.ts` `main()` → `dotenv` loads `<repo>/.env` (path from `src/db/paths.ts`) → `loadConfig()` from `src/config.ts` (zod-validated env; exits with a readable error on a missing/invalid variable).
 2. `createPools(config)` in `src/db/pool.ts` → two `pg.Pool`s (`rw`, `readonly`). Pools are lazy; no connection is made until first query.
-3. `buildApp({ config, db, probeDb })` in `src/app.ts` → registers `@fastify/cors` (dashboard origin only), `@fastify/rate-limit` (600/min), UUID request ids, the error handler (`normalizeError` → `{ error, details?, request_id }`), the 404 handler, and routes (`/health` plus the encapsulated `/webhooks/razorpay` ingress; api/v1, x402, stream later). `probeDb` is injected so tests simulate an unreachable database.
+3. `buildApp({ config, db, probeDb })` in `src/app.ts` → registers `@fastify/cors` (dashboard origin only), `@fastify/rate-limit` (600/min), UUID request ids, the error handler (`normalizeError` → `{ error, details?, request_id }`), the 404 handler, and routes (`/health`, live `/api/v1/system`, plus the encapsulated `/webhooks/razorpay` ingress; x402 and stream later). `probeDb` is injected so tests simulate an unreachable database.
    3a. `migrationStatus(pools.rw, MIGRATIONS_DIR)`: the numbered `0001_init`, `0002_readonly_grants`, and `0003_projection_guards` migrations are checked for pending files and checksum drift; pending migrations → exit 1 (unless `AEGIS_ALLOW_PENDING_MIGRATIONS=true`), while an unreachable database → warn and continue degraded.
 4. `app.listen({ port: config.API_PORT, host: '0.0.0.0' })`.
 5. `[live]` after listen: `startWorker({ pools, logger, handlers, concurrency })` spins `WORKER_CONCURRENCY` loops and the stale-lock sweeper (F3) unless `AEGIS_WORKER_ENABLED=false`.
@@ -86,7 +86,9 @@ disputes ─▶ payments ─▶ orders ─▶ customers
    - `bus.publish('action.<status>', …)`.
 7. `webhook_events.status='processed'`; audit row `actor='worker:<id>'`.
 
-## F4. Diagnosis [planned T7]
+## F4. Diagnosis [planned T7; LLM provider prerequisites live in T6]
+
+Task 6 supplies the provider boundary used by this flow: `src/llm/factory.ts` resolves `auto` once at boot, `src/llm/resilient.ts` applies timeout/retry/breaker and request-scoped development chaos, and `src/llm/mask.ts` removes PII before prompts are built. `GET /api/v1/system` exposes only `{ provider, model, modelFast }`. Anthropic coverage is SDK-mocked on this machine because `ANTHROPIC_API_KEY` is unavailable; the adapter remains available when configured.
 
 ```
 src/diagnosis/diagnostician.ts  diagnose(input)

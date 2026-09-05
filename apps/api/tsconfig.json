@@ -4,5 +4,5 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["src", "test", "../../db/seed", "../../scripts"]
+  "include": ["src", "test", "scripts", "../../db/seed", "../../scripts"]
 }
