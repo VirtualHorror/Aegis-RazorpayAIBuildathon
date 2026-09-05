@@ -300,3 +300,7 @@ The approval route locks the pending action and writes the human decision/audit 
 ### D-055 · Deterministic evidence packets (2026-09-05)
 
 Chargeback evidence is assembled through ordered SQL reads and validated against a closed zod packet before the masked narrative call. The packet is inserted only after an action row commits through `onProposed`; execution checks the human review state before marking the simulated submission and dispute projection.
+
+### D-056 · Local AST parser for Ask Aegis (2026-09-05)
+
+Text-to-SQL is validated locally with `pgsql-ast-parser@12.0.2` before execution. The validator accepts one SELECT-only statement over the documented allowlist, rejects mutation/system-schema/denylisted-function access, and wraps valid SQL with a 200-row limit. Execution uses the separately configured readonly PostgreSQL pool with a five-second transaction-local timeout; PII columns remain unavailable by grant, so database errors are returned honestly.

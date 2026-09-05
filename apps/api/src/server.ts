@@ -47,6 +47,9 @@ async function main(): Promise<void> {
   const app = await buildApp({
     config,
     db: pools.rw,
+    // Intent: route model-authored SQL through the least-privilege role, never the read-write application pool.
+    // Flow: createPools -> buildApp passes readonlyDb -> AskService wraps each query in a timed read-only transaction.
+    readonlyDb: pools.readonly,
     probeDb: () => probeDatabase(pools.rw),
     llm,
     bus,

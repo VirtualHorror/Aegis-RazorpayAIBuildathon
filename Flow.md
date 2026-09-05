@@ -137,7 +137,7 @@ GET /x402/products/:id/spec   (routes.ts, wrapped by x402Middleware(priceFn))
   replay (same nonce) → row is 'settled' → 402 {error:'nonce_already_settled'} + audit_log; all known rejection/expiry states are persisted atomically
 ```
 
-## F8. Ask Aegis (Text-to-SQL + forecast) [planned T15]
+## F8. Ask Aegis (Text-to-SQL + forecast) [live — T15]
 
 ```
 POST /api/v1/ask {question}
@@ -151,7 +151,7 @@ POST /api/v1/ask {question}
    ├─ forecast: spec = llm.completeJson(nl_to_forecast_spec) → {metric, window_days, horizon_days} (fallback: defaults)
    │           series = deterministic SQL template per metric (src/nlq/metrics.ts)
    │           result = forecast(series, horizon)                         src/nlq/forecast.ts (OLS slope + 7-day MA, unit tested)
-   └─ INSERT nl_queries(...) → 200 {kind, sql, rows | series+forecast, summary, degraded}
+   └─ INSERT nl_queries(...) → 200 {kind, sql, rows | series+forecast, summary, degraded}; generated SQL is returned even on validation/DB failure
 ```
 
 ## F9. Compliance scan [planned T16]

@@ -19,6 +19,7 @@ import type { EventOrchestrator } from './orchestrator/EventOrchestrator';
 import { approvalRoutes } from './routes/approvals';
 import { metricsRoutes } from './routes/metrics';
 import { x402Routes } from './x402/routes';
+import { askRoutes } from './routes/ask';
 
 export interface AppDeps {
   config: Config;
@@ -26,6 +27,8 @@ export interface AppDeps {
   probeDb: () => Promise<DbProbeResult>;
   /** Read-write pool used by the transactional webhook ingress. Null keeps health-only tests database independent. */
   db?: pg.Pool;
+  /** Dedicated least-privilege pool for model-generated SQL (C-D7); tests may omit it. */
+  readonlyDb?: pg.Pool | null;
   /** Future bus hook; T3 keeps it injectable until the event bus lands in T8. */
   onEvent?: (notification: IngressEventNotification) => void | Promise<void>;
   /** Override the logger (tests pass `false`). */
@@ -74,6 +77,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const llm = deps.llm ?? createLlmClient(config, app.log);
   await app.register(systemRoutes, { llm });
   if (deps.db) {
+    await app.register(askRoutes, { db: deps.db, readonlyDb: deps.readonlyDb, llm });
     await app.register(x402Routes, { db: deps.db, config, bus });
     await app.register(metricsRoutes, { db: deps.db });
     if (deps.orchestrator) await app.register(approvalRoutes, { db: deps.db, orchestrator: deps.orchestrator });
@@ -127,6 +131,9 @@ function normalizeError(error: unknown): { status: number; code: string; message
   const code =
     typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' ? error.code : undefined;
   const message = error instanceof Error ? error.message : String(error);
-  const status = statusCode !== undefined && statusCode >= 400 ? statusCode : 500;
-  return { status, code: code?.toLowerCase() ?? 'request_error', message };
+  // Intent: route handlers use zod for request contracts; malformed input is a client error, not an internal outage.
+  // Flow: preserve Fastify's explicit status when present -> classify ZodError as 400 -> default unknown failures to 500.
+  const zodValidation = error instanceof Error && error.name === 'ZodError';
+  const status = statusCode !== undefined && statusCode >= 400 ? statusCode : zodValidation ? 400 : 500;
+  return { status, code: code?.toLowerCase() ?? (zodValidation ? 'validation_error' : 'request_error'), message };
 }

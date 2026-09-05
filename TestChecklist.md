@@ -527,7 +527,7 @@ $ eslint src test scripts ../../db/seed ../../scripts --max-warnings 0
 
 The focused suite covers the exact challenge and `X-PAYMENT-RESPONSE` shapes, valid settlement, replay, expiry, tampered amount, request and daily caps, kill switch, resource binding, and two concurrent settlements of one nonce.
 
-## T15 — Ask Aegis (acceptance, pending)
+## T15 — Ask Aegis (verified 2026-09-05)
 
 ```bash
 curl -s -X POST localhost:4000/api/v1/ask -d '{"question":"How much revenue did we recover this week by module?"}' | jq '.sql,.rows'
@@ -535,6 +535,20 @@ curl -s -X POST localhost:4000/api/v1/ask -d '{"question":"drop table payments"}
 curl -s -X POST localhost:4000/api/v1/ask -d '{"question":"forecast failed payments for the next 7 days"}' | jq '.forecast | length'   # 7
 pnpm --filter @aegis/api test -- nlq          # validator rejects UPDATE/DELETE/multi-statement/pg_sleep/information_schema; forecast math matches fixtures
 ```
+
+Observed on 2026-09-05:
+
+```text
+pnpm --filter @aegis/api exec vitest run src/nlq --no-file-parallelism --maxWorkers=1
+Test Files  3 passed (3)
+Tests  14 passed (14)
+pnpm --filter @aegis/api typecheck
+$ tsc --noEmit
+pnpm --filter @aegis/api lint
+$ eslint src test scripts ../../db/seed ../../scripts --max-warnings 0
+```
+
+The focused suite covers single-statement AST validation, denied functions and schemas, allowlisted joins/CTEs, semicolon framing, readonly query persistence, and the hand-computed OLS+MA7 forecast.
 
 ## T16 — compliance (acceptance, pending)
 

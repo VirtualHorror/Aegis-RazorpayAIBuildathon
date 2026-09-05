@@ -24,7 +24,7 @@
 | F-014 | ChargebackEvidence module (packet + human review) | T12 | Codex | implemented | Assembly/module integration: 2 files / 4 tests passed; packet persistence is proposal-hook based and execution refuses unapproved packets |
 | F-015 | Approvals API + ledger + recovery attribution + metrics | T13 | Codex | implemented | `approvals.integration.test.ts`: concurrent approvals return one 200/one 409 and execute once; concurrent capture/order attribution creates one action-referenced credit and updates `recovered_paise`; metrics route reads independent aggregates |
 | F-016 | x402 gateway (challenge, verify, settle, replay guard, caps) | T14 | Codex | implemented | `src/x402` tests: 3 files / 9 tests; nonce row locking, exact 402/200 wire shapes, HMAC tamper rejection, expiry, caps, kill switch, and concurrent settlement are covered |
-| F-017 | Ask Aegis: Text-to-SQL sandbox + deterministic forecaster | T15 | Codex | scoped | |
+| F-017 | Ask Aegis: Text-to-SQL sandbox + deterministic forecaster | T15 | Codex | implemented | `src/nlq` tests: 3 files / 14 tests; AST allowlist/denylist, readonly timeout path, SQL persistence, and OLS+MA7 fixture pass |
 | F-018 | Compliance scanner (keywords + LLM rubric + evidence check) | T16 | Codex | scoped | |
 | F-019 | Web shell: design system, nav, theme, footer, SSE hook, GlowInput | T17 | Codex | scoped | |
 | F-020 | Overview + Events pages | T18 | Codex | scoped | |
