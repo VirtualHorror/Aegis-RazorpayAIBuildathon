@@ -35,4 +35,16 @@ describe('PII masking', () => {
     expect(masked.card.expiry_year).toBe('••••');
     expect(source.card.number).toBe('4111 1111 1111 1111');
   });
+
+  it('preserves timestamps so projection rows keep their failure timing', () => {
+    const masked = maskPii({
+      created_at: new Date('2026-09-05T10:00:00.000Z'),
+      customer: { contact: '+919876543210', updated_at: new Date('2026-09-05T10:00:01.000Z') },
+    });
+    // A `Date` has no own enumerable entries, so recursing into it would serialize as `{}` and drop the timing.
+    expect(JSON.parse(JSON.stringify(masked))).toEqual({
+      created_at: '2026-09-05T10:00:00.000Z',
+      customer: { contact: '+91••••••3210', updated_at: '2026-09-05T10:00:01.000Z' },
+    });
+  });
 });

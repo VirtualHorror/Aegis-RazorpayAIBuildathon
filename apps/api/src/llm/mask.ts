@@ -72,6 +72,10 @@ function maskKeyValue(key: string, value: unknown): unknown {
  */
 export function maskPii(value: unknown): unknown {
   if (Array.isArray(value)) return value.map((item) => maskPii(item));
+  // Projection rows arrive straight from node-postgres, so `timestamptz` columns are `Date` instances. Recursing into
+  // one yields no own enumerable entries and would serialize every timestamp in the prompt as `{}`, silently dropping
+  // the failure timing a diagnosis depends on. Dates carry no PII, so they are passed through to their ISO form.
+  if (value instanceof Date) return value;
   if (value === null || typeof value !== 'object') return value;
   const record = value as Record<string, unknown>;
   return Object.fromEntries(Object.entries(record).map(([key, item]) => [key, maskKeyValue(key, item)]));

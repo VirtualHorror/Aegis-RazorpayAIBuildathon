@@ -151,6 +151,59 @@ describe('Diagnostician input boundaries', () => {
     expect(result.id).toBe('skipped:evt_stale');
     expect(result.degradedReason).toBe('entity_not_applied');
   });
+
+  it('completes the model call before any database work and never opens a transaction (C-A6)', async () => {
+    // Intent: prove C-A6 structurally rather than by reading the source: an LLM call that lands after a BEGIN, or
+    // between a BEGIN and COMMIT, would hold projection row locks for the whole provider round trip.
+    const trace: string[] = [];
+    const llm: LlmClient = {
+      provider: 'ordering',
+      completeJson: async <T>(request: LlmJsonRequest<T>): Promise<LlmJsonResult<T>> => {
+        trace.push('llm');
+        return {
+          data: request.schema.parse({
+            root_cause: 'THREE_DS_AUTH_FAILED',
+            confidence: 0.9,
+            intervention_strategy: 'RETRY_LINK_LOCALIZED',
+            rationale: 'Ordering probe for the transaction boundary constraint.',
+          }),
+          provider: 'ordering',
+          model: 'ordering-v1',
+          latencyMs: 1,
+          tokensIn: 1,
+          tokensOut: 1,
+          raw: '{}',
+        };
+      },
+    };
+    const db = {
+      query: async (text: string) => {
+        trace.push(`sql:${text.trim().split(/\s+/)[0]?.toUpperCase()}`);
+        return {
+          rows: [{
+            id: '11111111-1111-1111-1111-111111111111',
+            event_id: 'evt_order', entity_type: 'payment', entity_id: 'pay_order',
+            hints: {}, provider: 'ordering', model: 'ordering-v1', prompt_version: 'v1', input_digest: 'd',
+            output: {}, root_cause: 'THREE_DS_AUTH_FAILED', confidence: '0.900',
+            strategy: 'RETRY_LINK_LOCALIZED', rationale: 'Ordering probe for the transaction boundary constraint.',
+            degraded: false, degraded_reason: null, latency_ms: 1, tokens_in: 1, tokens_out: 1,
+            created_at: new Date(0),
+          }],
+          rowCount: 1,
+        };
+      },
+    } as unknown as pg.Pool;
+
+    const payload = paymentPayload('order', 'authentication_failed', 'payment_authentication');
+    await new Diagnostician({ db, llm }).diagnose({
+      event: eventRow('evt_order', 'payment.failed', payload),
+      payload,
+      entity: entitySnapshot('payment', 'pay_order', { amount_paise: 79_900, error_step: 'payment_authentication' }),
+    });
+
+    expect(trace).toEqual(['llm', 'sql:INSERT']);
+    expect(trace.some((step) => step.startsWith('sql:BEGIN'))).toBe(false);
+  });
 });
 
 integration('Diagnostician', () => {

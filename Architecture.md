@@ -288,4 +288,5 @@ Next.js 16 App Router, Tailwind 4, `next-themes` (system default + manual toggle
 | Task 4 — worker + precedence-guarded projections | **done by Codex, verified by Claude** (see `Checklist.md` T4, `TestChecklist.md` §T4, F-006/D-032–D-035, B-006) |
 | Task 5 — webhook simulator CLI | **done by Codex, verified by Claude** (see `Checklist.md` T5, `TestChecklist.md` §T5, F-007, D-036–D-043, DV-006; the new `--contend` burst found B-007, an open T4 lock-order defect) |
 | Task 6 — provider-agnostic LLM client + resilience | **done by Codex, verified by Claude** (see `Checklist.md` T6, `TestChecklist.md` §T6, F-008, D-044/D-045; Anthropic and OpenAI are SDK-mocked — no live model output is claimed; B-008 fixed, B-009 open for T7) |
+| Task 7 — diagnostician (hints → LLM → cross-check → fallback) | **done by Codex, verified by Claude** (see `Checklist.md` T7, `TestChecklist.md` §T7, F-009, D-045–D-047; C-A6 proved by an ordering test, C-A7 re-proved on a real projection row, which found B-010; B-009 still open and now owned by T8) |
 | Everything else | planned; see `Checklist.md` and the Status column in `Bug-Feature.md` |

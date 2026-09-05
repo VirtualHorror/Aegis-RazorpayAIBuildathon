@@ -344,7 +344,7 @@ key is available, but its live chat request did not complete within the configur
 by mocked tests. Rate-limit-sensitive simulator bursts are not used as T6 evidence; the ingress limiter's 300/min window
 must be allowed to clear before any later burst probe.
 
-## T7 — diagnostician (acceptance, implemented 2026-09-05)
+## T7 — diagnostician (acceptance, verified 2026-09-05)
 
 ```bash
 pnpm --filter @aegis/api exec vitest run src/diagnosis src/db/repos/diagnoses.test.ts --reporter verbose
@@ -362,6 +362,41 @@ pnpm typecheck && pnpm test && pnpm lint
 # A pre-fix root run with the unpinned `vitest run` command failed because schema migration hooks interleaved
 # with worker/ingress files (`relation "jobs" does not exist` and contaminated duplicate assertions). The package
 # script was pinned, then the focused suite and the three gates above were run without another test process.
+```
+
+### T7 re-run by Claude (verification, 2026-09-05)
+
+```bash
+pnpm --filter @aegis/api exec vitest run src/diagnosis src/db/repos/diagnoses.test.ts src/llm/mask.test.ts
+# ✅ Test Files 6 passed (6) · Tests 44 passed (44) — includes Claude's two additions (B-010, C-A6 ordering)
+
+pnpm typecheck && pnpm test && pnpm lint   # x3, each exit 0
+# ✅ run 1/2/3: typecheck 3 projects; shared 5 files / 47 tests; api 23 files / 130 tests; lint 3 projects
+
+# C-A7 acid test — mask the shape production actually produces (a `RETURNING *` payments row + CustomerRow),
+# not a hand-written literal:
+#   LEAK alice@example.com: false   LEAK customer@example.test: false
+#   LEAK +919876543210: false       LEAK Aegis Test Customer: false
+#   masked -> "email":"a••••@example.com" "contact":"+91••••••3210" "name":"A••••"
+#   nested -> "notes":{"card":{"number":"••••••••••••1111"}}   (card.number/cvv/expiry_* masked at any depth)
+# ❗ The same probe found B-010: every `Date` masked to `{}`. Fixed in mask.ts:78; regression test added.
+
+# PostgreSQL numeric trap — proved the cast is load-bearing, not decorative:
+psql -h localhost -U aegis -d aegis_test -tAc "SELECT pg_typeof(confidence) FROM diagnoses LIMIT 1"   # numeric
+node -e "pool.query('SELECT confidence FROM diagnoses LIMIT 1')"
+# ✅ RAW driver value: "0.900" | typeof: string   -> parseDiagnosisConfidence() is required, and
+#    grep setTypeParser -> only apps/api/src/db/pg-types.ts:8 (OID 20 / int8). Nothing registers OID 1700.
+#    Every read path (insert RETURNING, get, list, latest) funnels through mapDiagnosisRow.
+
+# C-A6 — the model call is outside every transaction, proved rather than asserted:
+#   `Diagnostician.db` is typed `Pool` (diagnostician.ts:76), so a `PoolClient` cannot be injected;
+#   new test "completes the model call before any database work and never opens a transaction (C-A6)"
+#   records a trace from a fake pool -> ✅ ['llm', 'sql:INSERT'], no BEGIN.
+#   Non-vacuous: flipping the expectation to ['sql:INSERT', 'llm'] -> 1 failed. Restored.
+
+# D-045 — grep for a second definition of the contract:
+grep -rn "ROOT_CAUSES\s*=\|STRATEGIES\s*=\|DiagnoseOutputSchema\s*=" apps/api/src packages/
+# ✅ one definition (llm/prompts/index.ts:21,33,43); stub-fixtures.ts:12-13 and diagnosis/schema.ts re-export only.
 ```
 
 ## T8 — orchestrator (acceptance, pending)

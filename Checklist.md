@@ -436,6 +436,8 @@ export interface Diagnostician { diagnose(input: { event: WebhookEventRow; paylo
 
 **Verify.** `TestChecklist.md §T7`. **Docs.** `Flow.md` F4 → live; `Bug-Feature.md` F-009.
 
+**Verified by Claude, 2026-09-05.** GREEN. Full gate green on three consecutive runs (api 23 files / 130 tests). Cross-check table implemented exactly as specified, all eight rows tested. C-A7 re-proved on the real snapshot shape rather than a fixture; C-A6 holds structurally (`db: Pool`) and now has a non-vacuous ordering test; the `numeric(4,3)` confidence cast is load-bearing (the driver really returns `"0.900"`); D-045 honoured — one definition of the contract. Changed during verification: B-010 (`maskPii` flattened every `Date` to `{}`, silently dropping all five timestamps from the prompt — T7 is the first task to mask a database row) and the two tests covering B-010 and C-A6. B-007 and B-009 remain open; B-009 lands on Task 8.
+
 ---
 
 ### Task 8: EventOrchestrator + ActionModule contract + actions audit + SSE bus
