@@ -1,0 +1,33 @@
+{
+  "name": "aegis",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Aegis \u2014 The Agentic Merchant OS for Razorpay (Razorpay AI Intern Buildathon 2026)",
+  "author": "Nabhanyu",
+  "license": "MIT",
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter @aegis/api --filter @aegis/web run dev",
+    "build": "pnpm -r run build",
+    "test": "pnpm -r run test",
+    "typecheck": "pnpm -r run typecheck",
+    "lint": "pnpm -r run lint",
+    "db:migrate": "pnpm --filter @aegis/api run db:migrate",
+    "db:migrate:down": "pnpm --filter @aegis/api run db:migrate:down",
+    "db:status": "pnpm --filter @aegis/api run db:status",
+    "db:seed": "pnpm --filter @aegis/api run db:seed",
+    "db:backup": "bash scripts/db-backup.sh",
+    "sim": "pnpm --filter @aegis/api run sim",
+    "demo": "bash scripts/demo.sh",
+    "setup": "bash scripts/setup.sh"
+  },
+  "devDependencies": {
+    "@eslint/js": "~10.0.1",
+    "eslint": "~10.10.0",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "~8.69.0"
+  }
+}

@@ -1,0 +1,16 @@
+packages:
+  - apps/*
+  - packages/*
+
+# pnpm >= 10 refuses to run postinstall build scripts unless allow-listed (pnpm 11 key: allowBuilds).
+# These are the native/binary deps our stack needs; review before adding more.
+allowBuilds:
+  esbuild: true
+  unrs-resolver: true
+  sharp: true
+  "@tailwindcss/oxide": true
+
+# pnpm 11 supply-chain policy blocks very fresh releases; these pins were reviewed on 2026-09-05 (Decisions D-014).
+minimumReleaseAgeExclude:
+  - eslint@10.10.0
+  - fastify@5.12.3

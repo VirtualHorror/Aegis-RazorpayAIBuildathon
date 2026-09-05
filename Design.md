@@ -1,0 +1,93 @@
+# Design — the Aegis dashboard
+
+> Visual and interaction spec for `apps/web`. Codex reads this before any frontend task (T17–T22).
+> References (watched/inspected by the Architect on 2026-09-05, files in `~/Downloads/ReferenceAttachements`):
+> 1. `Recording 2026-09-05 074601.mp4` — vgpu.sh hero: glass prism, pointer-driven light beam, rainbow dispersion.
+> 2. `Recording 2026-09-05 074749.mp4` — Warp-style halftone dot grid that brightens into solid flowing shapes.
+> 3. `Screenshot 2026-09-05 075505.png` — Slack AI composer: dark rounded input with a soft multi-colour gradient glow bleeding out behind it.
+
+## 1. Direction: "mission control for money"
+
+Aegis is a control plane, so the UI should feel like an instrument panel, not a marketing site: dense but calm, monospace where data is data, one accent colour, real-time feedback, and generous dark surfaces where light effects can live. The single visual metaphor is the **prism**: one stream of events comes in, the orchestrator splits it into coloured, specialised actions. Module colours are the spectrum.
+
+## 2. Tokens (Tailwind 4 `@theme` in `globals.css`)
+
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `--bg` | `#F6F7FB` | `#070810` | page background |
+| `--surface` | `#FFFFFF` | `#0E1019` | cards, panels |
+| `--surface-2` | `#EEF0F6` | `#161927` | table headers, code, inset |
+| `--border` | `#DDE1EA` | `#232739` | 1px hairlines |
+| `--fg` | `#0B1020` | `#E8EAF2` | primary text |
+| `--fg-muted` | `#5B6478` | `#8B93A7` | secondary text |
+| `--accent` | `#2B6CF6` (Razorpay-adjacent blue) | `#5B8DFF` | links, primary buttons, focus rings |
+| `--ok` | `#0F9D58` | `#31C48D` | executed / recovered |
+| `--warn` | `#D97706` | `#F5A524` | pending approval |
+| `--danger` | `#DC2626` | `#F87171` | blocked / failed / prohibited |
+| Module spectrum | `checkout_recovery` #FF4D4D · `subscription_salvager` #FFB020 · `b2b_negotiator` #3DDC84 · `chargeback_evidence` #3B82F6 · `x402` #A855F7 · `compliance` #22D3EE · `nlq` #F472B6 | same | badges, feed rails, prism fan |
+
+Typography: `Geist Sans` for UI (`next/font`), `Geist Mono` for ids, amounts, JSON, SQL. Sizes: 13px body in tables, 14px elsewhere, 28–40px display for KPI numbers (tabular-nums). Spacing scale 4px; cards `rounded-2xl`, 1px border, no drop shadows in light mode; dark mode uses subtle inner highlight (`inset 0 1px 0 rgba(255,255,255,.04)`).
+
+## 3. Layout
+
+- **App shell**: left sidebar 240px (collapses to icons < 1024px, to a bottom bar < 640px) with nav: Overview, Events, Actions, Approvals, Ask Aegis, Compliance, x402 Lab, Settings. Top bar: environment pill (`LOCAL · SIM`), LLM provider pill (`openai · gpt-5.6` / `stub · degraded`), kill-switch indicator, theme toggle, "Run demo" button.
+- **Footer** on every route (in `app/layout.tsx`, not per page): `Made with 💖 by Nabhanyu for Razorpay AI Buildathon` — small, muted, centred, always visible at the bottom of the scroll container.
+- **Content** max-width 1400px, 24px gutters, 16px on mobile.
+
+## 4. Pages
+
+| Route | Purpose | Key components |
+|---|---|---|
+| `/` Overview | the pitch in one screen | `PrismHero` (flourish 1) with live counters flowing through it; KPI tiles: events (dupes rejected), actions (executed / pending / blocked), money recovered (₹), discounts granted, x402 revenue, LLM health (calls, degraded %); recent actions list |
+| `/events` | live ingress feed | SSE-driven table: time, event id, type, signature ✓/✗, dup count, status, latency; row expands to raw JSON; filters by type/status; `HalftoneField` (flourish 2) as the empty-state / "listening" backdrop |
+| `/actions` | audit trail | table + drawer: proposal, `bounds` rendered as a checklist (✓/✗ with limit vs actual), explanation steps, the exact outbound payload (JSON, copy button), diagnosis card (root cause, confidence bar, strategy, degraded badge), timeline |
+| `/approvals` | humans decide | queue of `pending_approval` actions and `requires_human_review` evidence packets; side-by-side: what the AI proposes vs the deterministic facts; Approve / Reject with a required note; result toast |
+| `/ask` | Ask Aegis | `GlowInput` (flourish 3) for the question; answer card shows: generated SQL (syntax-highlighted, always visible), validation verdict, result table, NL summary, and for forecast questions a line chart (history + forecast band); history of past questions |
+| `/compliance` | catalog risk | flags grouped by risk level; each shows description with the evidence span highlighted, keyword hits vs LLM assessment (agreement badge), actions: acknowledge / false positive; "Run scan" button |
+| `/x402` | Agentic commerce lab | three-step interactive demo: 1) request without payment → 402 JSON shown; 2) pay → 200 + `X-PAYMENT-RESPONSE`; 3) replay same nonce → rejected; table of settlements; caps shown |
+| `/settings` | guardrails | form over `guardrail_config` with descriptions; kill switch as a big deliberate toggle with confirmation; change history from `audit_log` |
+
+## 5. Flourishes (exact specs)
+
+### 5.1 `PrismHero` — light-refracting triangle (reference 1)
+What the reference does: black starfield; a centred glass triangle (prism) drawn as a translucent wireframe with soft internal reflections; a bright **white beam enters from the upper-left** at an angle controlled by the pointer, bends inside the prism, and **exits on the right as a rainbow fan** (red → violet, additive glow, slight blur), with a thin white specular streak continuing past the prism. As the pointer moves the entry angle changes and the fan sweeps; when the pointer leaves, the beam eases back to a resting angle.
+
+Aegis version: the beam is the event stream, the fan colours are the module spectrum (§2). Overlay labels at the fan ends ("Checkout recovery", "Salvage", "Negotiate", "Evidence", "x402") that light up when an SSE event for that module arrives.
+
+Implementation:
+- `components/prism/prismGeometry.ts` — pure: `prismGeometry({ width, height, pointer }) → { triangle: [p1,p2,p3], entry: {from,to}, internal: {from,to}, exit: {from,to}, fanRays: {angle, color}[] }` using Snell-like bending (index 1.5, dispersion spread 18°). Unit tested.
+- `components/prism/PrismWebGPU.tsx` — `vgpu` `effect()` fullscreen WGSL (`prism.wgsl`): starfield hash noise, SDF triangle outline with fresnel-ish glow, beam segments as capsule SDFs with additive colour, 7-band fan. Uniforms: `time`, `pointer`, `resolution`, `activity[7]` (per-module pulse 0..1 decaying over 1.2 s).
+- `components/prism/PrismCanvas2D.tsx` — same geometry drawn with `lineTo`, `shadowBlur`, `globalCompositeOperation: 'lighter'`; identical props. Used when `!navigator.gpu` or `prefers-reduced-motion` (then static frame).
+- `components/prism/PrismHero.tsx` — feature-detects and picks; caps DPR at 2; pauses when tab hidden; 60 fps target, < 3 ms/frame on the 2D path.
+- Codex: run `npx vgpu docs cat getting-started.md` and `npx vgpu examples search "fullscreen effect"` before writing WGSL. Install with `pnpm add vgpu three` + `pnpm add -D @webgpu/types` inside `apps/web` only.
+
+### 5.2 `HalftoneField` — vanishing/appearing pattern (reference 2)
+What the reference does: a regular grid of tiny white dots on black (~14 px pitch). An invisible smooth field (a slowly flowing ribbon/aurora shape) moves across; where the field is bright the dots grow until they merge into solid white, where it is dark they shrink to pinpoints. The result is a shape that appears to be "printed" onto the dot matrix and dissolves as it passes.
+
+Implementation (Canvas 2D, `components/fx/HalftoneField.tsx`):
+- Props: `pitch=14`, `color` (theme fg), `intensity` (0..1, drives the field amplitude — the events page raises it when new events arrive), `speed`, `className`.
+- Field: `f(x,y,t) = smoothstep(0.35, 0.85, 0.5 + 0.5·sin(0.9·u + 0.6·sin(1.7·v + t) + t·0.4))` with `u,v` rotated 35°, plus a second octave at half amplitude. Dot radius `r = pitch · (0.06 + 0.5·f)`. When `r > pitch/2` draw a square cell to merge.
+- Render at DPR ≤ 1.5, `requestAnimationFrame` throttled to 30 fps, stops when `prefers-reduced-motion` (draws one frame) or when offscreen (`IntersectionObserver`).
+- Used: `/events` backdrop, empty states, the "worker listening" panel, sidebar bottom when collapsed.
+
+### 5.3 `GlowInput` — gradient glow text box (reference 3)
+What the reference does: a dark rounded input (radius ~14 px, 1 px hairline border, 56 px tall composer) on a dark surface; behind it a **soft multi-colour halo** — mint/teal top-left, violet/magenta bottom, amber/orange right — blurred ~28 px, ~40 % opacity, extending ~24 px beyond the box like light leaking from behind a panel. Inside: placeholder text, a `Tab` hint chip, left icon buttons, right mic/send.
+
+Implementation (`components/ui/GlowInput.tsx`):
+- Wrapper `relative`; pseudo-layer `absolute -inset-1 rounded-[18px] blur-2xl opacity-40 bg-[conic-gradient(from_var(--a),#34D399,#22D3EE,#818CF8,#E879F9,#FBBF24,#34D399)]`; `--a` animates 0→360° over 14 s (`@property --a`), speeds up ×3 while focused, opacity 0.55 on focus, 0.25 idle. Light theme: opacity halves, colours desaturated 20 %.
+- Input surface: `bg-surface border border-border rounded-[14px]`, 16px text, `Tab` chip shows an example question when empty (Tab fills it), Enter submits, Shift+Enter newline, loading state replaces the send icon with a spinner and the glow pulses.
+- Also used as the compact search on `/events` and `/actions`.
+
+## 6. Motion
+- Page transitions: none (instant). Micro-interactions 150–200 ms ease-out. Live feed rows slide in 240 ms and flash the module colour rail once.
+- `prefers-reduced-motion`: disable all continuous animation (prism static, halftone static, glow static).
+
+## 7. Theme toggle
+`ThemeToggle` in the top bar: three-state (System / Light / Dark) segmented control, icon-only on mobile; persisted by `next-themes`; `<html suppressHydrationWarning class="…">`; `color-scheme` meta updated so native controls match.
+
+## 8. Accessibility & responsiveness checklist (verified by the Architect with Chrome)
+- Contrast ≥ 4.5:1 for text in both themes (tokens above are chosen for this).
+- All interactive elements reachable with Tab, visible `focus-visible` ring (`--accent`, 2px offset).
+- Tables scroll horizontally inside their container; no page-level horizontal scroll at 360px.
+- `aria-live="polite"` on the live feed container; toasts use `role="status"`.
+- Images/canvases have `aria-hidden` and a text alternative where they carry meaning (KPI numbers are text, not canvas).

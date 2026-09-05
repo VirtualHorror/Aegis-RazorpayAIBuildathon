@@ -1,0 +1,82 @@
+import { randomUUID } from 'node:crypto';
+import cors from '@fastify/cors';
+import rateLimit from '@fastify/rate-limit';
+import { AEGIS_VERSION } from '@aegis/shared';
+import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
+import type { Config } from './config';
+import type { DbProbeResult } from './db/pool';
+import { healthRoutes } from './routes/health';
+
+export interface AppDeps {
+  config: Config;
+  /** Injected so tests can simulate an unreachable database without a real connection. */
+  probeDb: () => Promise<DbProbeResult>;
+  /** Override the logger (tests pass `false`). */
+  logger?: FastifyServerOptions['logger'];
+}
+
+/**
+ * Build the Fastify app without listening.
+ * Intent: everything (plugins, routes, error shape) is wired here so tests use `app.inject()` on the exact production app.
+ * Flow:   logger → CORS (dashboard origin only) → rate limit (600/min default, per-route overrides) →
+ *         error/404 handlers → routes. Later tasks register ingress (/webhooks), api/v1, x402 and the SSE stream here.
+ */
+export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
+  const { config } = deps;
+  const app = Fastify({
+    logger: deps.logger ?? loggerOptions(config),
+    genReqId: () => randomUUID(),
+    bodyLimit: 1_048_576,
+    trustProxy: false,
+  });
+
+  await app.register(cors, { origin: [config.WEB_ORIGIN] });
+  await app.register(rateLimit, { global: true, max: 600, timeWindow: '1 minute' });
+
+  // One error shape everywhere: { error, details?, request_id }. Validation errors keep Fastify's 400.
+  app.setErrorHandler((error: unknown, request, reply) => {
+    const { status, code, message } = normalizeError(error);
+    if (status >= 500) request.log.error({ err: error }, 'unhandled error');
+    void reply.code(status).send({
+      error: status >= 500 ? 'internal_error' : code,
+      details: status >= 500 ? undefined : message,
+      request_id: request.id,
+    });
+  });
+  app.setNotFoundHandler((request, reply) => {
+    void reply.code(404).send({ error: 'not_found', details: `${request.method} ${request.url}`, request_id: request.id });
+  });
+
+  await app.register(healthRoutes, { probeDb: deps.probeDb, version: AEGIS_VERSION });
+  return app;
+}
+
+function loggerOptions(config: Config): FastifyServerOptions['logger'] {
+  return {
+    level: config.LOG_LEVEL,
+    // PII never reaches the logs (Constraints C-D4). Extend these paths when new fields appear.
+    redact: {
+      paths: ['req.headers.authorization', 'req.headers["x-razorpay-signature"]', '*.email', '*.contact', '*.phone'],
+      censor: '[redacted]',
+    },
+    ...(config.NODE_ENV === 'development'
+      ? { transport: { target: 'pino-pretty', options: { translateTime: 'HH:MM:ss', ignore: 'pid,hostname' } } }
+      : {}),
+  };
+}
+
+/**
+ * Fastify hands the error handler an `unknown`. Narrow it without casts: Fastify/HTTP errors carry a numeric
+ * `statusCode` and a string `code` (e.g. FST_ERR_VALIDATION); anything else is a 500.
+ */
+function normalizeError(error: unknown): { status: number; code: string; message: string } {
+  const statusCode =
+    typeof error === 'object' && error !== null && 'statusCode' in error && typeof error.statusCode === 'number'
+      ? error.statusCode
+      : undefined;
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string' ? error.code : undefined;
+  const message = error instanceof Error ? error.message : String(error);
+  const status = statusCode !== undefined && statusCode >= 400 ? statusCode : 500;
+  return { status, code: code?.toLowerCase() ?? 'request_error', message };
+}
