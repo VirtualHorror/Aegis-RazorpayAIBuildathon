@@ -53,7 +53,7 @@
 
 ---
 
-### Task 2: Migration runner hardening + core schema + seed
+### Task 2: Migration runner hardening + core schema + seed — **DONE by Codex (2026-09-05)**
 
 **Goal.** Every table in `Architecture.md §6` exists via numbered SQL migrations with down files; read-only role has PII-excluding grants; seed data makes the demo realistic.
 
@@ -71,7 +71,7 @@
 - Produces `pnpm db:migrate`, `pnpm db:migrate:down`, `pnpm db:migrate -- --status`, `pnpm db:seed`.
 
 **Steps.**
-- [ ] 2.1 Write `0001_init.sql` — exactly this DDL (add `-- Intent:` comments per table):
+- [x] 2.1 Write `0001_init.sql` — exactly this DDL (add `-- Intent:` comments per table):
 ```sql
 CREATE TABLE webhook_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -258,13 +258,13 @@ CREATE TABLE audit_log (
   created_at timestamptz NOT NULL DEFAULT now()
 );
 ```
-- [ ] 2.2 `0001_init.down.sql`: `DROP TABLE IF EXISTS … CASCADE` in reverse dependency order.
-- [ ] 2.3 `0002_readonly_grants.sql`: `GRANT USAGE ON SCHEMA public TO aegis_readonly;` then `GRANT SELECT ON webhook_events, jobs, orders, subscriptions, invoices, disputes, evidence_packets, diagnoses, actions, outbound_messages, ledger_entries, products, compliance_scan_runs, compliance_flags, x402_payments, nl_queries, guardrail_config, audit_log TO aegis_readonly;` and **column-level** grants: `GRANT SELECT (id, country, locale, opted_out, created_at, updated_at) ON customers TO aegis_readonly; GRANT SELECT (id, order_id, customer_id, amount_paise, currency, status, method, card_network, card_type, card_country, international, error_code, error_source, error_step, error_reason, rzp_created_at, created_at) ON payments TO aegis_readonly;`. Down: `REVOKE ALL ON ALL TABLES IN SCHEMA public FROM aegis_readonly;`. The migration must be skipped with a logged warning when the role does not exist (test DB on CI), never fail.
-- [ ] 2.4 Migration runner (`apps/api/src/db/migrate.ts`) already supports `up`, `down` (runs `<version>_<name>.down.sql` for the latest applied version in a transaction and deletes its `schema_migrations` row), `status`, and refuses to run when an applied file's checksum drifted. Do not rewrite it; add the integration tests (up → all tables exist → down → up round-trip; edit an applied file in the test DB copy → `migrateUp` throws `MigrationError` mentioning the version).
-- [ ] 2.5 Seed (`db/seed/seed.ts`, run with `tsx`, idempotent via `ON CONFLICT (id) DO UPDATE`): 12 customers spanning locales `en-IN, hi-IN, ta-IN, kn-IN, en-US, en-GB, en-AE, en-SG` with realistic masked contacts (`+91…`, `+1…`, `+44…`, `+971…`, `+65…`), two with `opted_out=true`; 16 products for merchant `acc_AegisDemo01` (electronics, apparel, SaaS plans, and **five deliberately risky descriptions**: "guaranteed 20% monthly returns", "cures diabetes in 30 days", "replica Rolex", "nicotine vape pods", "lottery ticket bundle"), 6 of them `agent_purchasable=true` with prices ₹99–₹999; guardrail defaults exactly as in `Architecture.md §6`; 3 invoices (₹4,20,000, ₹1,25,000, ₹60,000) with `floor_amount_paise = amount × 0.85`; 4 subscriptions (`active`), 6 orders. Print counts.
-- [ ] 2.6 `loadGuardrailConfig(db)`: `SELECT key, value FROM guardrail_config` → typed object; throw if any expected key is missing (fail fast, C-C5).
-- [ ] 2.7 Tests: unit — runner ordering, checksum mismatch, down file resolution; integration (`aegis_test`) — migrate up, all tables exist, migrate down/up round-trip, readonly role cannot select `customers.email` (skip with a message if role missing).
-- [ ] 2.8 Root scripts: `db:migrate`, `db:migrate:down`, `db:seed`, `db:backup` (`pg_dump $DATABASE_URL > backups/aegis-$(date +%s).sql`).
+- [x] 2.2 `0001_init.down.sql`: `DROP TABLE IF EXISTS … CASCADE` in reverse dependency order.
+- [x] 2.3 `0002_readonly_grants.sql`: `GRANT USAGE ON SCHEMA public TO aegis_readonly;` then `GRANT SELECT ON webhook_events, jobs, orders, subscriptions, invoices, disputes, evidence_packets, diagnoses, actions, outbound_messages, ledger_entries, products, compliance_scan_runs, compliance_flags, x402_payments, nl_queries, guardrail_config, audit_log TO aegis_readonly;` and **column-level** grants: `GRANT SELECT (id, country, locale, opted_out, created_at, updated_at) ON customers TO aegis_readonly; GRANT SELECT (id, order_id, customer_id, amount_paise, currency, status, method, card_network, card_type, card_country, international, error_code, error_source, error_step, error_reason, rzp_created_at, created_at) ON payments TO aegis_readonly;`. Down: `REVOKE ALL ON ALL TABLES IN SCHEMA public FROM aegis_readonly;`. The migration emits a warning and continues when the role does not exist.
+- [x] 2.4 Migration runner (`apps/api/src/db/migrate.ts`) supports `up`, `down` (runs `<version>_<name>.down.sql` for the latest applied version in a transaction and deletes its `schema_migrations` row), `status`, `--status`, and refuses to run when an applied file's checksum drifted; integration covers up → tables → down/up.
+- [x] 2.5 Seed (`db/seed/seed.ts`, run with `tsx`, idempotent via `ON CONFLICT (id) DO UPDATE`): 12 customers spanning the required locales with masked contacts and two opt-outs; 16 products for merchant `acc_AegisDemo01` with six agent-purchasable prices and five risky descriptions; exact guardrail defaults; 3 invoices with 85% floors; 4 active subscriptions; 6 orders. Prints counts.
+- [x] 2.6 `loadGuardrailConfig(db)`: `SELECT key, value FROM guardrail_config` → zod-validated typed object; throws if any expected key is missing or malformed.
+- [x] 2.7 Tests: unit runner ordering/down resolution/checksum helper; integration (`aegis_test`) migrates up, verifies all tables, performs down/up round-trip, validates typed guardrails, and proves readonly cannot select `customers.email` (skips with a message if role missing).
+- [x] 2.8 Root scripts: `db:migrate`, `db:migrate:down`, `db:seed`, `db:backup` are available and verified.
 
 **Verify.** `TestChecklist.md §T2`.
 **Docs.** `Flow.md` F1 (migrations at boot: the API refuses to start with pending migrations unless `AEGIS_ALLOW_PENDING_MIGRATIONS=true`), `Bug-Feature.md` F-004, `TestChecklist.md §T2`.

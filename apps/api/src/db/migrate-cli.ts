@@ -14,9 +14,12 @@ import { createPools } from './pool';
 
 async function main(): Promise<number> {
   loadDotenv({ path: REPO_ROOT_ENV, quiet: true });
-  const command = process.argv[2];
+  // Intent: support the documented `pnpm db:migrate -- --status` shorthand while keeping explicit up/down/status commands.
+  // Flow:   inspect the package-script command and optional flag -> normalize to one operation -> run the shared runner.
+  const requestedCommand = process.argv[2];
+  const command = requestedCommand === '--status' || (requestedCommand === 'up' && process.argv.slice(3).includes('--status')) ? 'status' : requestedCommand;
   if (!command || !['up', 'down', 'status'].includes(command)) {
-    console.error('usage: migrate-cli <up|down|status>');
+    console.error('usage: migrate-cli <up|down|status> (or --status)');
     return 2;
   }
   const config = loadConfig();

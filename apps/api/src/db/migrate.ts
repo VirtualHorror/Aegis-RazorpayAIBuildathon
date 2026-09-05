@@ -108,6 +108,15 @@ export async function migrateUp(pool: pg.Pool, dir: string, log: MigrationLogger
   const applied: string[] = [];
   for (const migration of status.pending) {
     const client = await pool.connect();
+    const noticeHandler = (notice: { message?: string }): void => {
+      // Intent: surface SQL-level RAISE WARNING messages (notably a missing optional readonly role) in the migration log.
+      // Flow:   PostgreSQL emits a notice while the migration query runs -> forward its message -> continue the migration.
+      log.warn(`migration ${migration.version}_${migration.name}: ${notice.message ?? 'database notice'}`);
+    };
+    // Intent: keep the runner compatible with minimal test doubles while using pg's notice stream in production.
+    // Flow:   detect EventEmitter support -> attach forwarding when available -> run the same transaction either way.
+    const supportsNotices = typeof client.on === 'function' && typeof client.off === 'function';
+    if (supportsNotices) client.on('notice', noticeHandler);
     try {
       await client.query('BEGIN');
       await client.query(migration.sql);
@@ -125,6 +134,7 @@ export async function migrateUp(pool: pg.Pool, dir: string, log: MigrationLogger
         `migration ${migration.version}_${migration.name} failed and was rolled back: ${error instanceof Error ? error.message : String(error)}`,
       );
     } finally {
+      if (supportsNotices) client.off('notice', noticeHandler);
       client.release();
     }
   }
@@ -145,6 +155,15 @@ export async function migrateDown(pool: pg.Pool, dir: string, log: MigrationLogg
     throw new MigrationError(`no down file for ${latest.version}_${latest.name} (expected ${basename(latest.version)}_${latest.name}.down.sql)`);
   }
   const client = await pool.connect();
+  const noticeHandler = (notice: { message?: string }): void => {
+    // Intent: keep rollback warnings observable when a down migration handles an optional role gracefully.
+    // Flow:   PostgreSQL emits a notice -> migration logger records it -> rollback continues normally.
+    log.warn(`migration ${latest.version}_${latest.name}: ${notice.message ?? 'database notice'}`);
+  };
+  // Intent: preserve the same optional notice behavior for down migrations and lightweight test clients.
+  // Flow:   attach only when the client exposes EventEmitter methods -> execute rollback -> detach before release.
+  const supportsNotices = typeof client.on === 'function' && typeof client.off === 'function';
+  if (supportsNotices) client.on('notice', noticeHandler);
   try {
     await client.query('BEGIN');
     await client.query(readFileSync(downPath, 'utf8'));
@@ -156,6 +175,7 @@ export async function migrateDown(pool: pg.Pool, dir: string, log: MigrationLogg
     await client.query('ROLLBACK');
     throw new MigrationError(`down migration ${latest.version}_${latest.name} failed and was rolled back: ${error instanceof Error ? error.message : String(error)}`);
   } finally {
+    if (supportsNotices) client.off('notice', noticeHandler);
     client.release();
   }
 }

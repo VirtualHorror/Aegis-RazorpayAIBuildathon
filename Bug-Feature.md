@@ -11,7 +11,7 @@
 | F-001 | Bare-metal environment (Node 24, pnpm 11, PostgreSQL 16 bootstrap script) | T1 | Claude | verified (Postgres part pending) | `node -v` → v24.20.0, `pnpm -v` → 11.25.0; `scripts/bootstrap-system.sh` passes `bash -n`; PostgreSQL install awaits the human `sudo` step (DV-001) |
 | F-002 | Monorepo scaffold (api, web, shared), typecheck + tests green | T1 | Claude | verified | `pnpm typecheck` / `test` (23 tests) / `lint` / `next build` all green; `/health` degraded-but-up without Postgres — see `TestChecklist.md` §T1 |
 | F-003 | Footer + theme toggle in the web shell | T1 | Claude | verified | `curl localhost:3000` contains the footer text, `suppressHydrationWarning`, the theme radiogroup and `₹4,20,000.00` from `@aegis/shared` |
-| F-004 | Migration runner + core schema + seed | T2 | Codex | scoped | |
+| F-004 | Migration runner + core schema + seed | T2 | Codex | implemented | `pnpm db:migrate` → applied 0001_init + 0002_readonly_grants; `pnpm db:seed` → customers=12, products=16, guardrails=12, invoices=3, subscriptions=4, orders=6; readonly `SELECT email FROM customers` → permission denied; API migration/schema tests → 14 passed |
 | F-005 | Idempotent webhook ingress (HMAC, dedupe, outbox) | T3 | Codex | scoped | |
 | F-006 | Job worker (SKIP LOCKED, backoff, DLQ, sweeper) + entity projections with precedence | T4 | Codex | scoped | |
 | F-007 | Webhook simulator CLI (scenarios, duplicates, bursts, chaos) | T5 | Codex | scoped | |
@@ -40,6 +40,7 @@
 | ID | Title | Found in | Root cause | Fix | Status | Evidence |
 |---|---|---|---|---|---|---|
 | B-001 | API printed `usage: migrate-cli <up\|down\|status>` and exited with code 2 at boot | T1 | `server.ts` imported `MIGRATIONS_DIR` from `db/migrate-cli.ts`, whose top-level `main()` ran on import | moved paths to `apps/api/src/db/paths.ts`; the CLI now runs only when `process.argv[1]` is the CLI file (`migrate-cli.ts:57`) | verified | `tsx src/server.ts` → `aegis api listening on http://0.0.0.0:4000`; `tsx src/db/migrate-cli.ts` → usage, exit 2 |
+| B-002 | Documented `pnpm db:migrate -- --status` was treated as `up` | T2 | the API package script supplies `up` before forwarded pnpm arguments, so the original parser never saw `--status` as the command | normalize trailing `--status` arguments in `apps/api/src/db/migrate-cli.ts` and route them to `migrationStatus` | fixed | `pnpm db:migrate -- --status` → `applied: 0001_init, 0002_readonly_grants` and `pending: (none)` |
 
 Template for a new bug:
 ```

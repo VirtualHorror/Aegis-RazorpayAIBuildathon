@@ -33,6 +33,7 @@
 | D-026 | 2026-09-05 | Default LLM models: OpenAI-compatible proxy `gpt-5.6` (fast tier `gpt-5.4-mini`); Anthropic `claude-opus-5` | accepted |
 | D-027 | 2026-09-05 | Deterministic pre-classification before any diagnosis LLM call | accepted |
 | D-028 | 2026-09-05 | sudo-requiring setup is isolated in `scripts/bootstrap-system.sh`; everything else is user-level | accepted |
+| D-029 | 2026-09-05 | Migration CLI accepts `--status` as an alias after the root `db:migrate` script's fixed `up` command | accepted |
 
 ---
 
@@ -142,3 +143,8 @@
 ### D-028 · sudo isolation
 **Context.** `sudo` on this VM requires a password, so the agent cannot run apt non-interactively.
 **Choice.** All privileged steps (apt packages, PostgreSQL install, role/DB creation) live in `scripts/bootstrap-system.sh`, run once by the human. Everything else (`nvm`, `pnpm install`, migrations, seeds, tests) is user-level and agent-runnable.
+
+### D-029 · migration status shorthand
+**Context.** The public checklist documents `pnpm db:migrate -- --status`, while the package script invokes the migration runner with `up` before forwarding arguments.
+**Choice.** Treat a trailing `--status` (including pnpm's forwarded `--` marker) as the explicit status operation and leave `up`, `down`, and `status` commands available.
+**Consequence.** The documented command reports applied, pending, and drifted migrations without requiring a second root script name.

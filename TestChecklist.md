@@ -45,17 +45,22 @@ git log --oneline | head -3                                 # ✅ initial scaffo
 git status --porcelain | wc -l                              # ✅ 0
 ```
 
-## T2 — migrations + schema + seed (acceptance, pending)
+## T2 — migrations + schema + seed (verified 2026-09-05)
 
 ```bash
-pnpm db:migrate                             # applies 0001_init … prints "applied N migrations"; re-run prints "0 pending"
-pnpm db:migrate:down                        # reverts the last migration; re-apply works
-psql $DATABASE_URL -c "\dt"                 # lists all tables from Architecture.md §6
+pnpm db:migrate                             # applied 0001_init, 0002_readonly_grants; applied 2 migration(s)
+pnpm db:migrate -- --status                 # applied: 0001_init, 0002_readonly_grants; pending: (none)
+pnpm db:migrate:down                        # reverted 0002_readonly_grants; re-apply works
+pnpm db:migrate                             # applied 0002_readonly_grants; applied 1 migration(s)
+psql $DATABASE_URL -c "\dt"                 # 21 relations (schema_migrations + 20 domain tables)
 psql $DATABASE_URL -c "select count(*) from guardrail_config"    # 12
-pnpm db:seed                                # "seeded: customers=…, products=…, guardrails=12"; idempotent on re-run
-psql $DATABASE_URL_READONLY -c "select email from customers limit 1"   # ERROR: permission denied for table customers (column-level grants exclude PII)
-pnpm --filter @aegis/api test -- migrate    # unit tests for version ordering and checksum mismatch detection pass
+pnpm db:seed                                # seeded: customers=12, products=16, guardrails=12, invoices=3, subscriptions=4, orders=6
+pnpm db:seed                                # same counts on idempotent rerun
+psql $DATABASE_URL_READONLY -c "select email from customers limit 1"   # ERROR: permission denied for table customers
+pnpm --filter @aegis/api test -- migrate    # 4 files passed, 14 tests passed
 ```
+
+Observed on 2026-09-05: `\dt` listed `actions`, `audit_log`, `compliance_flags`, `compliance_scan_runs`, `customers`, `diagnoses`, `disputes`, `evidence_packets`, `guardrail_config`, `invoices`, `jobs`, `ledger_entries`, `nl_queries`, `orders`, `outbound_messages`, `payments`, `products`, `schema_migrations`, `subscriptions`, `webhook_events`, and `x402_payments`. PostgreSQL denied the omitted customer email column as expected. The migration suite also exercised the `aegis_test` down/up round trip and typed guardrail loader.
 
 ## T3 — webhook ingress (acceptance, pending)
 

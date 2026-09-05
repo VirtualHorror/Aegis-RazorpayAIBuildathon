@@ -3,17 +3,19 @@
 > One section per flow. Each step names the file and function so a reader can follow the code.
 > Status markers: **[live]** exists in the repo · **[planned Tn]** to be built in checklist task n. Codex flips markers when a task lands.
 
-## F1. Boot [live — Task 1]
+## F1. Boot [live — Tasks 1–2]
 
 1. `apps/api/src/server.ts` `main()` → `dotenv` loads `<repo>/.env` (path from `src/db/paths.ts`) → `loadConfig()` from `src/config.ts` (zod-validated env; exits with a readable error on a missing/invalid variable).
 2. `createPools(config)` in `src/db/pool.ts` → two `pg.Pool`s (`rw`, `readonly`). Pools are lazy; no connection is made until first query.
 3. `buildApp({ config, probeDb })` in `src/app.ts` → registers `@fastify/cors` (dashboard origin only), `@fastify/rate-limit` (600/min), UUID request ids, the error handler (`normalizeError` → `{ error, details?, request_id }`), the 404 handler, and routes (`/health` now; ingress, api/v1, x402, stream later). `probeDb` is injected so tests simulate an unreachable database.
-   3a. `migrationStatus(pools.rw, MIGRATIONS_DIR)`: pending migrations → exit 1 (unless `AEGIS_ALLOW_PENDING_MIGRATIONS=true`); database unreachable → warn and continue degraded.
+   3a. `migrationStatus(pools.rw, MIGRATIONS_DIR)`: the numbered `0001_init` and `0002_readonly_grants` migrations are checked for pending files and checksum drift; pending migrations → exit 1 (unless `AEGIS_ALLOW_PENDING_MIGRATIONS=true`), while an unreachable database → warn and continue degraded.
 4. `app.listen({ port: config.API_PORT, host: '0.0.0.0' })`.
 5. `[planned T4]` after listen: `startWorker(...)` spins `WORKER_CONCURRENCY` loops (F3).
 6. On `SIGINT`/`SIGTERM`: stop accepting, drain worker loops (finish current job, max 10 s), `pools.end()`, exit 0.
 
 `GET /health` (`src/routes/health.ts`): runs `SELECT 1` on the rw pool with a 1 s timeout; responds `200 {"status":"ok","db":"ok"}` or `200 {"status":"degraded","db":"unavailable","error":"…"}` — the API stays up when the DB is down so the dashboard can show the outage.
+
+Migration commands (`src/db/migrate-cli.ts`) apply each SQL file in version order inside its own transaction, record its SHA-256 checksum in `schema_migrations`, and expose `up`, `down`, `status`, plus the documented `--status` shorthand. `0002_readonly_grants` emits a PostgreSQL warning and records as applied when the optional `aegis_readonly` role is absent; when present it grants only the non-PII customer/payment columns.
 
 ## F2. Webhook ingress [planned T3]
 
