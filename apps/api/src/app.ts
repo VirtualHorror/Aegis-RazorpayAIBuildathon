@@ -18,6 +18,7 @@ import { sseRoute } from './bus/sse-route';
 import type { EventOrchestrator } from './orchestrator/EventOrchestrator';
 import { approvalRoutes } from './routes/approvals';
 import { metricsRoutes } from './routes/metrics';
+import { x402Routes } from './x402/routes';
 
 export interface AppDeps {
   config: Config;
@@ -73,6 +74,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const llm = deps.llm ?? createLlmClient(config, app.log);
   await app.register(systemRoutes, { llm });
   if (deps.db) {
+    await app.register(x402Routes, { db: deps.db, config, bus });
     await app.register(metricsRoutes, { db: deps.db });
     if (deps.orchestrator) await app.register(approvalRoutes, { db: deps.db, orchestrator: deps.orchestrator });
   }

@@ -44,6 +44,8 @@ const EnvSchema = z.object({
   OPENAI_MODEL: z.string().min(1).default('gpt-5.6'),
   OPENAI_MODEL_FAST: z.string().min(1).default('gpt-5.4-mini'),
   LLM_TIMEOUT_MS: z.coerce.number().int().min(1).max(120_000).default(20_000),
+  X402_SIM_SECRET: z.string().min(16, 'X402_SIM_SECRET must be at least 16 characters').default('x402_local_dev_secret_change_me'),
+  X402_PAY_TO: z.string().min(1).default('merchant:aegis-demo'),
 });
 
 export type Config = z.infer<typeof EnvSchema>;

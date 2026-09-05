@@ -124,7 +124,7 @@ Every module lives in `src/modules/<name>/index.ts` and follows `propose → gua
 3. `approve` → `executeAction(action)` → module `execute()` → persist `result`, `outbound_messages`, `ledger_entries`; status `executed|failed`; `bus.publish`. Capture/order-paid events run deterministic action attribution in a short transaction and publish `action.recovered` after commit.
 4. Evidence: `POST /api/v1/evidence/:disputeId/decision` same pattern; approve → `submitted` (simulated), audit row.
 
-## F7. x402 gateway [planned T14]
+## F7. x402 gateway [live — T14]
 
 ```
 GET /x402/products/:id/spec   (routes.ts, wrapped by x402Middleware(priceFn))
@@ -134,7 +134,7 @@ GET /x402/products/:id/spec   (routes.ts, wrapped by x402Middleware(priceFn))
                  fail → UPDATE status='rejected', reject_reason → 402 {error: reason}
                  ok   → BEGIN; SELECT … FOR UPDATE (nonce); UPDATE status='settled'; INSERT ledger_entries(x402_revenue); COMMIT
                         → 200 resource + header X-PAYMENT-RESPONSE (base64 {success, txId, settledAt, network:'aegis-sim'})
-  replay (same nonce) → row is 'settled' → 402 {error:'nonce_already_settled'} + audit_log
+  replay (same nonce) → row is 'settled' → 402 {error:'nonce_already_settled'} + audit_log; all known rejection/expiry states are persisted atomically
 ```
 
 ## F8. Ask Aegis (Text-to-SQL + forecast) [planned T15]

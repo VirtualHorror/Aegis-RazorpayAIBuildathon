@@ -597,11 +597,11 @@ All arithmetic in integer paise with `Math.ceil` toward the merchant; unit tests
 - Rejections: `402 { "x402Version":1, "error": "<reason>" }` with reasons `invalid_payment_header | unknown_nonce | nonce_expired | nonce_already_settled | amount_below_required | bad_signature | amount_exceeds_policy | payer_daily_cap_exceeded`; kill switch → `503 { "error": "gateway_paused" }`.
 
 **Steps.**
-- [ ] 14.1 `x402Middleware(priceFor: (req) => Promise<{ amountPaise, description }>)` as a Fastify `preHandler`: no header → insert `challenged` row (expires +60 s) → 402. Header → decode → `facilitator.verifyAndSettle(payload, required)` in one transaction: `SELECT … FOR UPDATE` by nonce; check status `challenged`, not expired, amount ≥ required, signature, `amount <= x402_max_amount_paise`, payer daily sum + amount ≤ `x402_daily_cap_per_payer_paise`, kill switch off → `settled` + ledger `x402_revenue` credit + audit + bus `x402.settled`; any failure → `rejected` with reason + bus `x402.rejected`.
-- [ ] 14.2 Routes: `GET /x402/catalog` (free), `GET /x402/products/:id/spec` (paid = product price), `POST /x402/orders {product_id, qty ≤ 5}` (paid = price × qty; creates an `orders` row with `notes.channel='x402'`), `GET /api/v1/x402/payments` (list for the lab page).
-- [ ] 14.3 Buyer CLI: step 1 request → print 402 JSON; step 2 build + sign header → print 200 + decoded `X-PAYMENT-RESPONSE`; `--replay` reuses the nonce → print the rejection; `--amount` overrides to demonstrate caps.
-- [ ] 14.4 Tests: happy path; replay → `nonce_already_settled`; expired nonce; tampered amount → `bad_signature`; over cap; two concurrent settlements of one nonce → exactly one settled (row lock); kill switch → 503.
-- [ ] 14.5 Commit `feat(t14): x402 gateway with simulated facilitator`.
+- [x] 14.1 `x402Middleware(priceFor: (req) => Promise<{ amountPaise, description }>)` as a Fastify `preHandler`: no header → insert `challenged` row (expires +60 s) → 402. Header → decode → `facilitator.verifyAndSettle(payload, required)` in one transaction: `SELECT … FOR UPDATE` by nonce; check status `challenged`, not expired, amount ≥ required, signature, `amount <= x402_max_amount_paise`, payer daily sum + amount ≤ `x402_daily_cap_per_payer_paise`, kill switch off → `settled` + ledger `x402_revenue` credit + audit + bus `x402.settled`; any failure → `rejected` with reason + bus `x402.rejected`.
+- [x] 14.2 Routes: `GET /x402/catalog` (free), `GET /x402/products/:id/spec` (paid = product price), `POST /x402/orders {product_id, qty ≤ 5}` (paid = price × qty; creates an `orders` row with `notes.channel='x402'`), `GET /api/v1/x402/payments` (list for the lab page).
+- [x] 14.3 Buyer CLI: step 1 request → print 402 JSON; step 2 build + sign header → print 200 + decoded `X-PAYMENT-RESPONSE`; `--replay` reuses the nonce → print the rejection; `--amount` overrides to demonstrate caps.
+- [x] 14.4 Tests: happy path; replay → `nonce_already_settled`; expired nonce; tampered amount → `bad_signature`; over cap; two concurrent settlements of one nonce → exactly one settled (row lock); kill switch → 503.
+- [x] 14.5 Commit `feat(t14): x402 gateway with simulated facilitator`.
 
 **Verify/Docs.** `TestChecklist.md §T14`; `Flow.md` F7 → live; `Bug-Feature.md` F-016; `Decisions.md` D-024 confirmed.
 

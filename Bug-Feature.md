@@ -23,7 +23,7 @@
 | F-013 | B2BNegotiator module (bounded negotiation) | T11 | Codex | implemented | Pricing/state tests and module suite pass; live LLM path is injected at registry boot and model-down fallback is bounded |
 | F-014 | ChargebackEvidence module (packet + human review) | T12 | Codex | implemented | Assembly/module integration: 2 files / 4 tests passed; packet persistence is proposal-hook based and execution refuses unapproved packets |
 | F-015 | Approvals API + ledger + recovery attribution + metrics | T13 | Codex | implemented | `approvals.integration.test.ts`: concurrent approvals return one 200/one 409 and execute once; concurrent capture/order attribution creates one action-referenced credit and updates `recovered_paise`; metrics route reads independent aggregates |
-| F-016 | x402 gateway (challenge, verify, settle, replay guard, caps) | T14 | Codex | scoped | |
+| F-016 | x402 gateway (challenge, verify, settle, replay guard, caps) | T14 | Codex | implemented | `src/x402` tests: 3 files / 9 tests; nonce row locking, exact 402/200 wire shapes, HMAC tamper rejection, expiry, caps, kill switch, and concurrent settlement are covered |
 | F-017 | Ask Aegis: Text-to-SQL sandbox + deterministic forecaster | T15 | Codex | scoped | |
 | F-018 | Compliance scanner (keywords + LLM rubric + evidence check) | T16 | Codex | scoped | |
 | F-019 | Web shell: design system, nav, theme, footer, SSE hook, GlowInput | T17 | Codex | scoped | |

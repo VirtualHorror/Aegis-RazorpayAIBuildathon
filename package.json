@@ -22,7 +22,8 @@
     "db:backup": "bash scripts/db-backup.sh",
     "sim": "pnpm --filter @aegis/api run sim",
     "demo": "bash scripts/demo.sh",
-    "setup": "bash scripts/setup.sh"
+    "setup": "bash scripts/setup.sh",
+    "x402:buy": "tsx scripts/x402-buy.ts"
   },
   "devDependencies": {
     "@eslint/js": "~10.0.1",

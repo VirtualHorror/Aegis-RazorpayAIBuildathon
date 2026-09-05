@@ -304,4 +304,5 @@ Next.js 16 App Router, Tailwind 4, `next-themes` (system default + manual toggle
 | Task 11 — B2BNegotiator module | **implemented** (bounded integer-paise offers, model text placeholders, approval threshold) |
 | Task 12 — ChargebackEvidence module | **implemented** (deterministic packet assembly, proposal hook, human-reviewed submission) |
 | Task 13 — approvals, attribution, and metrics | **implemented and green by Codex** (action-locked decisions, action-referenced recovery ledger, independent summary aggregates) |
+| Task 14 — x402 gateway | **implemented and green by Codex** (server-issued nonce challenge, HMAC settlement, replay/cap/kill-switch guards, buyer CLI) |
 | Everything else | planned; see `Checklist.md` and the Status column in `Bug-Feature.md` |

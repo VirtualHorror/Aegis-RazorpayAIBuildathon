@@ -504,7 +504,7 @@ $ eslint src test scripts ../../db/seed ../../scripts --max-warnings 0
 
 The integration file proves action decisions serialize to one `200` and one `409` with one module execution, capture/order attribution creates one `recovered_revenue` row keyed by the action, and a second attribution is a no-op. The metrics route aggregates events, actions, ledger, audit, and diagnosis tables independently.
 
-## T14 — x402 (acceptance, pending)
+## T14 — x402 (verified 2026-09-05)
 
 ```bash
 curl -si localhost:4000/x402/products/prod_001/spec | head -1        # HTTP/1.1 402
@@ -512,6 +512,20 @@ pnpm x402:buy prod_001                                                # 200 + X-
 pnpm x402:buy prod_001 --replay                                       # 402 {"error":"nonce_already_settled"}
 pnpm x402:buy prod_big --amount 999999                                # 402 {"error":"amount_exceeds_policy"}
 ```
+
+Observed on 2026-09-05:
+
+```text
+pnpm --filter @aegis/api exec vitest run src/x402 --no-file-parallelism --maxWorkers=1
+Test Files  3 passed (3)
+Tests  9 passed (9)
+pnpm --filter @aegis/api typecheck
+$ tsc --noEmit
+pnpm --filter @aegis/api lint
+$ eslint src test scripts ../../db/seed ../../scripts --max-warnings 0
+```
+
+The focused suite covers the exact challenge and `X-PAYMENT-RESPONSE` shapes, valid settlement, replay, expiry, tampered amount, request and daily caps, kill switch, resource binding, and two concurrent settlements of one nonce.
 
 ## T15 — Ask Aegis (acceptance, pending)
 
