@@ -28,7 +28,7 @@
 
 - **C-C1** Never process a webhook without first persisting it idempotently on `webhook_events.event_id`. The ingress path is: verify signature → upsert event → enqueue job in the same transaction → 200. An unverified delivery must never occupy a key a verified delivery could use: `x-razorpay-event-id` is untrusted until the HMAC passes, so rejected deliveries are keyed into the `unverified:<sha256(raw body)>` namespace (D-031).
 - **C-C2** Never skip the idempotency check "because it's a simulation". Duplicates must be answered `200 {"status":"duplicate"}` and counted.
-- **C-C3** Never update an entity projection without `SELECT … FOR UPDATE` and the precedence rule (`shouldApplyPaymentTransition`, `isStaleSubscriptionEvent`).
+- **C-C3** Never update an entity projection without `SELECT … FOR UPDATE` and the precedence rule (`shouldApplyPaymentTransition`, `isStaleSubscriptionEvent`). Within one transaction the rows are taken in **one global order: the entity's own row first, then toward the foreign-key root — `disputes → payments → orders → customers`, with `subscriptions` and `invoices` sitting directly above `customers`.** Locking a parent out of that order deadlocks a concurrent projection of the sibling entity (B-006, D-035); a new projection or module must extend this order, never invert it.
 - **C-C4** Never dequeue jobs without `FOR UPDATE SKIP LOCKED`; never lose a job on crash (outbox + sweeper).
 - **C-C5** Never hardcode mock data where a DB call is required. Fixtures live in `db/seed` and test files only; API responses always come from PostgreSQL.
 - **C-C6** Never use in-memory state as the source of truth (the SSE bus is a notification channel, not storage).

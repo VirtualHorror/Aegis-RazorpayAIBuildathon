@@ -35,9 +35,11 @@
 | D-028 | 2026-09-05 | sudo-requiring setup is isolated in `scripts/bootstrap-system.sh`; everything else is user-level | accepted |
 | D-029 | 2026-09-05 | Migration CLI accepts `--status` as an alias after the root `db:migrate` script's fixed `up` command | accepted |
 | D-030 | 2026-09-05 | `db/seed` is typechecked and linted through `@aegis/api`; `pg`, `dotenv`, `@types/pg` are also declared as root devDependencies so files under `db/` resolve them | accepted |
+| D-031 | 2026-09-05 | Unverified webhook deliveries key into `unverified:<sha256(raw body)>`, never into the claimed `event_id` | accepted |
 | D-032 | 2026-09-05 | Additive projection guard migration (`0003_projection_guards`) adds `last_event_at` to orders/payments/invoices/disputes and `version` to disputes | accepted |
 | D-033 | 2026-09-05 | Initialize `invoices.floor_amount_paise` from `amount_paise` on INSERT and never overwrite it during projection updates | accepted |
 | D-034 | 2026-09-05 | Re-check persisted `signature_valid` inside the `process_event` transaction before parsing or projecting | accepted |
+| D-035 | 2026-09-05 | Projections take rows in one global lock order (entity row, then toward the FK root) so no two projections can deadlock | accepted |
 
 ---
 
@@ -179,3 +181,9 @@
 **Context.** Ingress normally enqueues only verified events, but a queued row can be manually inserted or survive an earlier defect. Queue membership alone must not authorize projection.
 **Choice.** `processEventHandler` locks and re-reads the webhook row, checks `signature_valid === true`, and returns without parsing or projecting invalid rows. The worker marks that inert job `succeeded`; the event remains `ignored` for audit.
 **Consequences.** A forged or corrupted queue row cannot mutate entity tables, even if it names a known event. The check is inside the same transaction as projection and event status updates.
+
+### D-035 · One global lock order for projections
+**Context.** Task 4 verification found a real ABBA deadlock (B-006). `projectOrder` locked `orders` and then upserted `customers`; `projectPayment` upserted `customers` and then locked `orders`. Two workers handling `order.paid` and `payment.captured` for the same order and customer — a pair Razorpay delivers together — could each hold the row the other wanted, and PostgreSQL aborted one with `40P01`.
+**Options.** (a) leave it: the aborted job retries after the backoff and eventually succeeds; (b) wrap projections in a serializable transaction or a table-level lock; (c) give every projection the same lock order.
+**Choice.** (c). Each projection locks its own entity row first (that row is what the precedence guard reads), then walks *toward* the foreign-key root: `disputes → payments → orders → customers`, with `subscriptions` and `invoices` directly above `customers`. `projectPayment` therefore takes the `orders` row before upserting `customers`; because `orders.customer_id` is itself a foreign key, the *creation* of a missing order still happens after the customer upsert (`lockOrder` / `createOrder` in `apps/api/src/orchestrator/projections/payments.ts`).
+**Consequences.** No pair of projections can form a lock cycle, so throughput does not depend on the retry path masking deadlocks. (a) was rejected because a deadlock costs a full backoff interval per collision, is invisible in the job's final state, and grows with `WORKER_CONCURRENCY`; (b) was rejected because it serialises unrelated entities. `C-C3` now states the order, so T8's orchestrator and the T10/T11 modules must extend it rather than invent their own.

@@ -54,17 +54,30 @@ function eventStatus(eventType: string): PaymentStatus | undefined {
   return suffix && PAYMENT_STATUSES.includes(suffix as PaymentStatus) ? (suffix as PaymentStatus) : undefined;
 }
 
-/** Ensure a payment's order parent exists before the payment FK is written. */
-async function ensureOrder(
+/**
+ * Take the payment's order parent lock, reporting whether that parent already exists.
+ * Intent: `projectOrder` locks `orders` before `customers`, so this projection must do the same or the two form an
+ *         ABBA cycle (PostgreSQL 40P01) whenever an order event and a payment event name the same order and customer.
+ * Flow: lock the existing order row -> caller upserts the customer -> caller creates the order only if it is missing.
+ */
+async function lockOrder(tx: pg.PoolClient, orderId: string | null): Promise<boolean> {
+  if (orderId === null) return true;
+  const existing = await tx.query<{ id: string }>('SELECT id FROM orders WHERE id = $1 FOR UPDATE', [orderId]);
+  return existing.rows.length === 1;
+}
+
+/**
+ * Create the minimal order parent a payment references before the payment FK is written.
+ * Intent: `orders.customer_id` is itself a foreign key, so this must run after the customer upsert.
+ * Flow: insert a placeholder order -> a later `order.*` event overwrites it, because its `last_event_at` is NULL.
+ */
+async function createOrder(
   tx: pg.PoolClient,
-  orderId: string | null,
+  orderId: string,
   customerId: string | null,
   amount: number,
   currency: string,
 ): Promise<void> {
-  if (orderId === null) return;
-  const existing = await tx.query<{ id: string }>('SELECT id FROM orders WHERE id = $1 FOR UPDATE', [orderId]);
-  if (existing.rows[0]) return;
   await tx.query(
     `INSERT INTO orders (id, customer_id, amount_paise, currency, status, items, notes, version)
      VALUES ($1, $2, $3, $4, 'created', '[]'::jsonb, '{}'::jsonb, 1)
@@ -90,12 +103,17 @@ export async function projectPayment(tx: pg.PoolClient, payload: RazorpayWebhook
     return snapshot('payment', current, await loadCustomer(tx, current.customer_id), false);
   }
 
-  const customer = await projectCustomer(tx, entity);
   const customerId = definedOr(entity.customer_id, current?.customer_id, null);
   const amount = assertSafePaise(definedOr(entity.amount, current?.amount_paise, 0), 'payment.amount_paise');
   const currency = definedOr(entity.currency, current?.currency, 'INR');
   const orderId = definedOr(entity.order_id, current?.order_id, null);
-  await ensureOrder(tx, orderId, customerId, amount, currency);
+  // Intent: hold this transaction's rows in one global order -- payments, then orders, then customers -- so no pair of
+  //         projections can wait on each other. `projectOrder` takes orders before customers; taking the customer first
+  //         here deadlocked a concurrent `order.paid` for the same order and customer (B-006).
+  // Flow: lock the order parent -> upsert the customer -> create the order only when it was still missing.
+  const orderExists = await lockOrder(tx, orderId);
+  const customer = await projectCustomer(tx, entity);
+  if (orderId !== null && !orderExists) await createOrder(tx, orderId, customerId, amount, currency);
 
   const status = incomingStatus;
   const sourceId = sourceEventId(ctx, current?.last_event_id);

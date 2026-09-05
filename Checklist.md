@@ -319,7 +319,7 @@ then, only when `inserted` and `eventType ∈ KNOWN_EVENT_TYPES`: `INSERT INTO j
 
 ---
 
-### Task 4: Job worker + entity projections with precedence — **DONE by Codex (2026-09-05)**
+### Task 4: Job worker + entity projections with precedence — **DONE by Codex (2026-09-05) · verified GREEN by Claude (2026-09-05, after fixing B-006)**
 
 **Goal.** Jobs are claimed with `FOR UPDATE SKIP LOCKED`, retried with backoff, dead-lettered; `process_event` projects the Razorpay entity into `payments/orders/subscriptions/invoices/disputes` under a row lock with the precedence rules; the API boots the worker.
 

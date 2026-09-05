@@ -61,6 +61,16 @@ src/worker/job-runner.ts  runLoop(workerId)
 
 `processEventHandler` locks and re-reads the event row, requires persisted `signature_valid = true` before parsing or projecting, then runs the projection and `processed` update in the same transaction. An invalid-signature queue row is left `ignored` and cannot mutate any entity table (D-034).
 
+Lock order inside a projection transaction (C-C3, D-035) — the entity's own row first, then toward the foreign-key root, so two workers can never form a cycle:
+
+```
+disputes ─▶ payments ─▶ orders ─▶ customers
+                 subscriptions ─▶ customers
+                      invoices ─▶ customers
+```
+
+`projectPayment` therefore takes the `orders` row (`lockOrder`) *before* upserting the customer, and only creates a missing order (`createOrder`) afterwards, because `orders.customer_id` is itself a foreign key. Getting this backwards deadlocked a concurrent `order.paid` (B-006).
+
 `EventOrchestrator.handle(eventId)` (planned T8; Task 4's process handler currently stops after projection):
 1. `loadEvent` → `RazorpayWebhookSchema.parse(payload)`; mark `webhook_events.status='processing'`.
 2. `route = ROUTES[event.event_type]` (`src/orchestrator/routing.ts`); missing → `ignored`.

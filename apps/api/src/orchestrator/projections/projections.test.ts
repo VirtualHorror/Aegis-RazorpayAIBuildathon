@@ -5,7 +5,7 @@ import { RazorpayWebhookSchema, type RazorpayWebhook } from '@aegis/shared';
 import { MIGRATIONS_DIR, REPO_ROOT_ENV } from '../../db/paths';
 import { migrateUp } from '../../db/migrate';
 import { withTransaction } from '../../db/tx';
-import { applyProjection } from './index';
+import { applyProjection, projectOrder, projectPayment } from './index';
 
 loadDotenv({ path: REPO_ROOT_ENV, quiet: true });
 
@@ -29,6 +29,20 @@ async function insertEvent(pool: pg.Pool, eventId: string, payload: RazorpayWebh
      VALUES ($1, $2, $3, $4::jsonb, $5, true, $6, 'received')`,
     [eventId, payload.event, payload.account_id ?? null, JSON.stringify(payload), eventId, new Date(Number(payload.created_at) * 1_000)],
   );
+}
+
+/** Wait until one of this suite's connections is parked on a row lock, so an interleaving can be pinned deterministically. */
+async function waitForLockWait(pool: pg.Pool, timeoutMs = 5_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const waiting = await pool.query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM pg_stat_activity
+       WHERE application_name = 'aegis-projection-tests' AND wait_event_type = 'Lock'`,
+    );
+    if (waiting.rows[0]?.count !== '0') return;
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error('no connection blocked on a lock within the timeout');
 }
 
 integration('entity projections', () => {
@@ -122,9 +136,14 @@ integration('entity projections', () => {
       withTransaction(pool, (tx) => applyProjection(tx, authorized, { eventId: 'evt_projection_race_auth', eventAt: new Date(1_757_000_021_000) })),
       withTransaction(pool, (tx) => applyProjection(tx, captured, { eventId: 'evt_projection_race_capture', eventAt: new Date(1_757_000_022_000) })),
     ]);
-    const row = (await pool.query<{ status: string; version: number }>('SELECT status, version FROM payments WHERE id = $1', ['pay_projection_race'])).rows[0];
-    expect(row?.status).toBe('captured');
-    expect(row?.version).toBeLessThanOrEqual(2);
+    // Whichever transaction committed first, the capture must be the surviving event: `version` is 1 when the capture
+    // won the insert and the authorization was rejected, 2 when the authorization inserted first and the capture
+    // applied on top. A bare `version <= 2` cannot fail here, so assert the winner's identity as well.
+    const row = (await pool.query<{ status: string; status_rank: number; version: number; last_event_id: string }>(
+      'SELECT status, status_rank, version, last_event_id FROM payments WHERE id = $1', ['pay_projection_race'],
+    )).rows[0];
+    expect(row).toMatchObject({ status: 'captured', status_rank: 2, last_event_id: 'evt_projection_race_capture' });
+    expect([1, 2]).toContain(row?.version);
   });
 
   it('rejects an older subscription event by last_event_at', async () => {
@@ -175,4 +194,53 @@ integration('entity projections', () => {
       'SELECT amount_paise, floor_amount_paise, status, version FROM invoices WHERE id = $1', ['inv_projection_001'],
     )).rows[0]).toMatchObject({ amount_paise: 420000, floor_amount_paise: 300000, status: 'paid', version: 2 });
   });
+
+  it('does not deadlock when an order event and a payment event share an order and a customer', async () => {
+    // Intent: every projection must take rows in one global order (payments -> orders -> customers). When the payment
+    //         path took the customer row first it formed an ABBA cycle with `projectOrder` and PostgreSQL aborted one
+    //         side with 40P01 (B-006), which is invisible to a Promise.all race that happens to interleave benignly.
+    // Flow: transaction A takes the order lock `projectOrder` opens with -> transaction B runs the whole payment
+    //       projection and must park on the order row, never on the customer row -> A then runs `projectOrder` to
+    //       completion. Before the fix, A's customer upsert closed the cycle and one transaction died with 40P01.
+    const paymentEvent = webhook('payment.captured', 'payment', {
+      entity: 'payment', id: 'pay_lock_order', amount: 149900, currency: 'INR', status: 'captured',
+      order_id: 'order_lock_order', customer_id: 'cus_lock_order', contact: '+91******42',
+    }, 1_757_000_060);
+    const orderEvent = webhook('order.paid', 'order', {
+      entity: 'order', id: 'order_lock_order', amount: 149900, currency: 'INR', status: 'paid', customer_id: 'cus_lock_order',
+    }, 1_757_000_061);
+    await insertEvent(pool, 'evt_lock_order_payment', paymentEvent);
+    await insertEvent(pool, 'evt_lock_order_order', orderEvent);
+    // Both parents already exist and are committed: the steady state after either entity's first sighting.
+    await pool.query("INSERT INTO customers (id, contact) VALUES ('cus_lock_order', '+91******42')");
+    await pool.query("INSERT INTO orders (id, customer_id, amount_paise, currency, status) VALUES ('order_lock_order', 'cus_lock_order', 149900, 'INR', 'created')");
+
+    const orderTx = await pool.connect();
+    const paymentTx = await pool.connect();
+    try {
+      await orderTx.query('BEGIN');
+      await paymentTx.query('BEGIN');
+      await orderTx.query('SELECT * FROM orders WHERE id = $1 FOR UPDATE', ['order_lock_order']);
+
+      const payment = projectPayment(paymentTx, paymentEvent, { eventId: 'evt_lock_order_payment', eventAt: new Date(1_757_000_060_000) });
+      await waitForLockWait(pool);
+
+      const order = await projectOrder(orderTx, orderEvent, { eventId: 'evt_lock_order_order', eventAt: new Date(1_757_000_061_000) });
+      await orderTx.query('COMMIT');
+      expect(order.applied).toBe(true);
+
+      await payment;
+      await paymentTx.query('COMMIT');
+    } finally {
+      await orderTx.query('ROLLBACK').catch(() => undefined);
+      await paymentTx.query('ROLLBACK').catch(() => undefined);
+      orderTx.release();
+      paymentTx.release();
+    }
+
+    expect((await pool.query<{ status: string; version: number }>('SELECT status, version FROM orders WHERE id = $1', ['order_lock_order'])).rows[0])
+      .toMatchObject({ status: 'paid', version: 2 });
+    expect((await pool.query<{ status: string; order_id: string; version: number }>('SELECT status, order_id, version FROM payments WHERE id = $1', ['pay_lock_order'])).rows[0])
+      .toMatchObject({ status: 'captured', order_id: 'order_lock_order', version: 1 });
+  }, 20_000);
 });

@@ -189,6 +189,48 @@ pnpm lint
 
 The integration suites exercise four concurrent claim loops over 100 jobs, duplicate webhook delivery racing two workers, a projection that retries after its first commit, invalid-signature queue entries, retry/DLQ mirroring, stale lease recovery, unseen FK parents, payment precedence, subscription timestamp precedence, and immutable invoice floors. The full root gates and the live HTTP proof are recorded in `HANDOFF5.md`.
 
+### T4 verification re-run (Claude, 2026-09-05) — GREEN after fixing B-006
+
+```bash
+pnpm db:migrate -- --status
+# applied: 0001_init, 0002_readonly_grants, 0003_projection_guards
+# pending: (none)
+
+pnpm typecheck   # packages/shared: Done; apps/api: Done; apps/web: Done
+pnpm test        # shared 4 files / 25 tests · api 9 files / 52 tests   (51 + the B-006 regression)
+pnpm lint        # packages/shared: Done; apps/api: Done; apps/web: Done
+```
+
+B-006 red-green (the only change to Codex's code):
+
+```text
+Codex's payments.ts restored:  × does not deadlock when an order event and a payment event share an order and a customer
+                               error: deadlock detected  code 40P01  at ensureOrder (payments.ts:66)
+                               Tests  1 failed | 7 passed (8)
+fix restored:                  Test Files  1 passed (1)          Tests  8 passed (8)
+```
+
+Live HTTP proof (`API_PORT=4031`, `NODE_ENV=production`, `AEGIS_WORKER_ENABLED=true`, `WORKER_CONCURRENCY=4`, DB `aegis`) — the deadlocking pair delivered concurrently:
+
+```text
+evt_v4_live_order    http=200 {"status":"accepted","event_id":"evt_v4_live_order","duplicate_count":0}
+evt_v4_live_payment  http=200 {"status":"accepted","event_id":"evt_v4_live_payment","duplicate_count":0}
+
+jobs|2|process_event|succeeded|1|          <- attempts=1: no deadlock abort, no retry
+jobs|3|process_event|succeeded|1|
+events|evt_v4_live_order|processed|
+events|evt_v4_live_payment|processed|
+order|order_v4_live|paid|149900|1|evt_v4_live_order
+payment|pay_v4_live|captured|149900|order_v4_live|cus_v4_live|1|evt_v4_live_payment
+customer|cus_v4_live|IN|en-IN|+91******42
+
+grep -ic 'deadlock|40P01' api.log  ->  0
+```
+
+Defence in depth confirmed by reading the code and the suite, not the handoff: `process_event` re-reads `signature_valid` under `FOR UPDATE` *before* `RazorpayWebhookSchema.parse` and before any projection; a queued invalid-signature event leaves zero rows in `payments`/`orders`/`customers`, the job ends `succeeded` (inert, never retried) and the event stays `ignored` (D-034). The node-postgres int8 trap is solved by the side-effect module `apps/api/src/db/pg-types.ts` — imported by `db/pool.ts` and listed in Vitest `setupFiles` — and `git diff task-03-done..HEAD -- packages/shared/src/money.ts` is empty, so `assertSafePaise` was not loosened. Server stopped with `kill -TERM 88476` (owned PID); no unrelated process touched.
+
+Probe rows `order_v4_live` / `pay_v4_live` / `cus_v4_live` (and Codex's `*_task4_live`) remain in the development database as harmless projections; `pnpm db:seed` is unaffected by them.
+
 ## T5 — simulator (acceptance, pending)
 
 ```bash
