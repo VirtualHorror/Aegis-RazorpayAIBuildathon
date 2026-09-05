@@ -62,7 +62,7 @@ src/worker/job-runner.ts  runLoop(workerId)
 2. `route = ROUTES[event.event_type]` (`src/orchestrator/routing.ts`); missing → `ignored`.
 3. `withTransaction(rw, async (tx) => { entity = await projections[route.entity].apply(tx, payload) })` — projections do `SELECT … FOR UPDATE` then apply the precedence rule (`packages/shared/src/domain/precedence.ts`) and upsert. **Transaction ends here** (C-A6).
 4. `if (route.diagnose) diagnosis = await diagnostician.diagnose({ event, payload, entity })` (F4). Never inside a transaction.
-5. `config = await guardrails.snapshot()`; `ctx = { event, payload, entity, diagnosis, config, now, logger }`.
+5. `config = await loadGuardrailConfig(rw)` (`src/db/repos/guardrails.ts`, live since T2; throws `GuardrailConfigError` when a seeded key is missing or malformed); `ctx = { event, payload, entity, diagnosis, config, now, logger }`.
 6. `for m of modules.filter(m => m.handles.includes(type) && m.canHandle(ctx))`:
    - `proposal = await m.propose(ctx)`; `null` → log "no action" with reason.
    - `guard = m.guard(proposal, ctx)`; plus orchestrator-level rules: kill switch, cooldown, quiet hours, daily budget (`src/guardrails/rules.ts`).

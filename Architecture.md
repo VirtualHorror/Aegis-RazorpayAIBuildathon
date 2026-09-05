@@ -282,4 +282,5 @@ Next.js 16 App Router, Tailwind 4, `next-themes` (system default + manual toggle
 | Area | Status |
 |---|---|
 | Task 1 — environment + scaffold | **done by Claude** (see `Checklist.md` T1) |
+| Task 2 — migrations + core schema + seed | **done by Codex, verified by Claude** (see `Checklist.md` T2, `TestChecklist.md` §T2) |
 | Everything else | planned; see `Checklist.md` and the Status column in `Bug-Feature.md` |

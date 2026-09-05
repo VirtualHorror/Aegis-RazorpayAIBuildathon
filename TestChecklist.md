@@ -45,7 +45,7 @@ git log --oneline | head -3                                 # ✅ initial scaffo
 git status --porcelain | wc -l                              # ✅ 0
 ```
 
-## T2 — migrations + schema + seed (verified 2026-09-05)
+## T2 — migrations + schema + seed — **verified 2026-09-05 (Claude)**
 
 ```bash
 pnpm db:migrate                             # applied 0001_init, 0002_readonly_grants; applied 2 migration(s)
@@ -61,6 +61,25 @@ pnpm --filter @aegis/api test -- migrate    # 4 files passed, 14 tests passed
 ```
 
 Observed on 2026-09-05: `\dt` listed `actions`, `audit_log`, `compliance_flags`, `compliance_scan_runs`, `customers`, `diagnoses`, `disputes`, `evidence_packets`, `guardrail_config`, `invoices`, `jobs`, `ledger_entries`, `nl_queries`, `orders`, `outbound_messages`, `payments`, `products`, `schema_migrations`, `subscriptions`, `webhook_events`, and `x402_payments`. PostgreSQL denied the omitted customer email column as expected. The migration suite also exercised the `aegis_test` down/up round trip and typed guardrail loader.
+
+Verification Agent additions (Claude, 2026-09-05) — every line below was run on this VM, output as observed:
+
+```bash
+pnpm db:backup                                              # ✅ backup written: backups/aegis-20260905-101633.sql (52 KB, gitignored)
+pnpm db:migrate:down && pnpm db:migrate:down                # ✅ reverted 0002_readonly_grants, reverted 0001_init; pg_tables → schema_migrations only
+pnpm db:migrate                                             # ✅ applied 0001_init, applied 0002_readonly_grants, applied 2 migration(s); \dt → 21 relations
+# Checklist 2.1 DDL vs 0001_init.sql minus comments        # ✅ identical: 182 lines, 20 tables, 6 indexes, 21 `-- Intent:` comments
+psql $DATABASE_URL_READONLY -c "select id, country, locale, opted_out from customers limit 1"   # ✅ cus_001|IN|en-IN|f   (granted columns work)
+psql $DATABASE_URL_READONLY -c "select name from customers limit 1"                             # ✅ ERROR: permission denied for table customers (same for contact, notes, *, and payments.email/contact/card_issuer/error_description)
+psql $DATABASE_URL_READONLY -c "update guardrail_config set value='true' where key='kill_switch'"   # ✅ ERROR: cannot execute UPDATE in a read-only transaction
+psql $DATABASE_URL_READONLY -c "select pg_sleep(6)"                                             # ✅ ERROR: canceling statement due to statement timeout (5 s role setting)
+# information_schema.table_privileges / column_privileges for aegis_readonly: 18 tables SELECT-only; customers → id,country,locale,opted_out,created_at,updated_at; payments → the 17 columns of step 2.3; after `db:migrate:down` (0002) → 0 rows each
+(cd apps/api && tsx src/server.ts)     # with 0002 pending  # ✅ exit 1: pending migrations — run `pnpm db:migrate` (or set AEGIS_ALLOW_PENDING_MIGRATIONS=true)
+sed 's/aegis_readonly/aegis_readonly_missing/g' db/migrations/0002_readonly_grants.sql | psql $DATABASE_URL_TEST -v ON_ERROR_STOP=1   # ✅ WARNING: role aegis_readonly_missing does not exist; skipping readonly grants — exit 0 (down file: same, "…grant rollback")
+# probe migration 9998 (`DO $$ BEGIN RAISE WARNING … END $$`) through migrateUp/migrateDown on aegis_test   # ✅ log.warn("migration 9998_notice_probe: probe warning from up sql") and the down variant; no leftover schema_migrations row
+curl -s localhost:4000/health          # after migrate; server PID-killed afterwards   # ✅ {"status":"ok","db":"ok","db_latency_ms":1,"version":"0.1.0",...}
+pnpm typecheck && pnpm test && pnpm lint                    # ✅ shared 14 tests · api 14 tests (4 files) · web placeholder; typecheck and lint now include db/seed (B-003, D-030)
+```
 
 ## T3 — webhook ingress (acceptance, pending)
 

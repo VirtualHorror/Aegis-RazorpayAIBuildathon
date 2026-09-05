@@ -20,6 +20,8 @@ Aegis — The Agentic Merchant OS for Razorpay. An event-driven AI control plane
 - **Tests are part of the task.** Pure logic → unit tests; DB/HTTP paths → integration tests against `DATABASE_URL_TEST`. Run `pnpm typecheck && pnpm test && pnpm lint` before you say done.
 - **Verify with real commands.** The task's section in `TestChecklist.md` lists them. Paste actual output into your handoff. If something cannot be verified on this machine (e.g. no API key), say so explicitly.
 - **Update the docs in the same task**: `Flow.md` (flip `[planned Tn]` → `[live]`, fix names to match the code), `Bug-Feature.md` (status + evidence, bugs you found, deviations), `TestChecklist.md` (make the pending section real), `Decisions.md` (new deps/choices).
+- **Checklist hygiene.** Tick `- [ ]` → `- [x]`; never reword a step to describe what you built instead. If you had to deviate from a step, leave its text alone and record the deviation in `Bug-Feature.md` ("Deviations") and the handoff.
+- **Every TypeScript file is typechecked and linted.** Code outside `apps/*` and `packages/*` (`db/seed`, `scripts/`) must be included by a package's `typecheck` and `lint` scripts (`db/seed` is covered by `@aegis/api`, see D-030). A file that no tsconfig includes is not typechecked, however green `pnpm typecheck` looks.
 - **Commit once at the end**: `feat(tNN): <summary>` (or `fix`/`docs`/`chore`), then `git tag task-NN-done`. Never commit `.env`, `node_modules`, `.next`, `backups/`.
 - **Stay inside the repo.** Do not install system packages (no `sudo`), do not change global git config, do not touch files outside this directory except `~/.nvm` usage.
 

@@ -34,6 +34,7 @@
 | D-027 | 2026-09-05 | Deterministic pre-classification before any diagnosis LLM call | accepted |
 | D-028 | 2026-09-05 | sudo-requiring setup is isolated in `scripts/bootstrap-system.sh`; everything else is user-level | accepted |
 | D-029 | 2026-09-05 | Migration CLI accepts `--status` as an alias after the root `db:migrate` script's fixed `up` command | accepted |
+| D-030 | 2026-09-05 | `db/seed` is typechecked and linted through `@aegis/api`; `pg`, `dotenv`, `@types/pg` are also declared as root devDependencies so files under `db/` resolve them | accepted |
 
 ---
 
@@ -148,3 +149,9 @@
 **Context.** The public checklist documents `pnpm db:migrate -- --status`, while the package script invokes the migration runner with `up` before forwarding arguments.
 **Choice.** Treat a trailing `--status` (including pnpm's forwarded `--` marker) as the explicit status operation and leave `up`, `down`, and `status` commands available.
 **Consequence.** The documented command reports applied, pending, and drifted migrations without requiring a second root script name.
+
+### D-030 · `db/seed` inside the typecheck/lint programs
+**Context.** `db/seed/seed.ts` and its fixtures live outside every workspace package. `pnpm typecheck` and `pnpm lint` never saw them, and `tsc` could not resolve `pg`/`dotenv` from `db/` at all (`TS2307`); the seed only ran because `tsx` falls back to resolving bare specifiers from its own install location. Found by the Verification Agent in T2 (B-003).
+**Options.** (a) a new `@aegis/db` workspace package; (b) move the seed into `apps/api/src`; (c) declare `pg`, `dotenv`, `@types/pg` as root devDependencies (same `~` ranges as `apps/api`, no new package versions) and include `../../db/seed` in the `@aegis/api` typecheck and lint scripts.
+**Choice.** (c). Smallest change that keeps the `Architecture.md §3` layout, makes C-E2 enforceable for the seed, and relies on ordinary Node resolution instead of a loader quirk. The lockfile only gains root importer entries.
+**Consequence.** Any future TypeScript under `db/` or `scripts/` follows the same rule (AGENTS.md); if `scripts/simulate.ts` (T5) needs a dependency, declare it at the root the same way rather than importing it through a sibling package.
