@@ -483,7 +483,7 @@ export interface Diagnostician { diagnose(input: { event: WebhookEventRow; paylo
 
 ---
 
-### Task 10: SubscriptionSalvager module (dunning state machine) — **UNLOCKED 2026-09-05 (Sprint 2: T10–T16 handed off together in `HANDOFF14.md`)**
+### Task 10: SubscriptionSalvager module (dunning state machine) — **DONE by Codex (2026-09-05) · verified GREEN by Claude (2026-09-06; Sprint 2 batch, D-052)**
 
 **Goal.** On `subscription.pending|halted`, walk a bounded dunning schedule: message + scheduled retry job per step, stop at `max_dunning_retries`, mark `recovered` on `subscription.charged|activated`, `churned` after the last step, `escalated` when the diagnosis says so.
 
@@ -510,7 +510,7 @@ Transition table (implement + comment): `none --failure_observed→ retry_schedu
 
 ---
 
-### Task 11: B2BNegotiator module (bounded discount negotiation)
+### Task 11: B2BNegotiator module (bounded discount negotiation) — **DONE by Codex (2026-09-05) · verified GREEN by Claude (2026-09-06)**
 
 **Goal.** On `invoice.expired` for invoices ≥ ₹50,000, run a bounded negotiation: offers computed by code from a floor and a max-discount ceiling, LLM drafts the wording only, approvals gate large discounts, hard stop after N rounds.
 
@@ -538,7 +538,7 @@ All arithmetic in integer paise with `Math.ceil` toward the merchant; unit tests
 
 ---
 
-### Task 12: ChargebackEvidence module (evidence packet → human review)
+### Task 12: ChargebackEvidence module (evidence packet → human review) — **DONE by Codex (2026-09-05) · verified GREEN by Claude (2026-09-06)**
 
 **Goal.** On `payment.dispute.created`, assemble a structured evidence packet from the DB, have the LLM write a narrative, and pause at `requires_human_review`. Nothing is ever auto-submitted.
 
@@ -558,7 +558,7 @@ All arithmetic in integer paise with `Math.ceil` toward the merchant; unit tests
 
 ---
 
-### Task 13: Approvals API + ledger attribution + metrics summary
+### Task 13: Approvals API + ledger attribution + metrics summary — **DONE by Codex (2026-09-05) · verified GREEN by Claude (2026-09-06; migration numbered 0004, DV-009)**
 
 **Goal.** Humans approve/reject actions and evidence; recovered money is attributed deterministically; a single metrics endpoint powers the Overview.
 
@@ -584,7 +584,7 @@ All arithmetic in integer paise with `Math.ceil` toward the merchant; unit tests
 
 ---
 
-### Task 14: x402-native API gateway (simulated facilitator)
+### Task 14: x402-native API gateway (simulated facilitator) — **DONE by Codex (2026-09-05) · verified GREEN by Claude (2026-09-06)**
 
 **Goal.** Paid endpoints for AI buyers: `402` challenge without `X-PAYMENT`, HMAC-verified simulated payment with server-issued nonce, replay protection, per-request and per-payer caps, ledger entry, kill switch; plus a buyer CLI for the demo.
 
@@ -607,7 +607,7 @@ All arithmetic in integer paise with `Math.ceil` toward the merchant; unit tests
 
 ---
 
-### Task 15: Ask Aegis — Text-to-SQL sandbox + deterministic forecaster
+### Task 15: Ask Aegis — Text-to-SQL sandbox + deterministic forecaster — **DONE by Codex (2026-09-05) · verified GREEN by Claude (2026-09-06; no model call inside a locked transaction)**
 
 **Goal.** Natural-language questions over the local DB: LLM writes SQL, code validates it (AST), the read-only role executes it with a timeout and row limit, the SQL is always shown; forecast questions produce numbers computed in TypeScript.
 
@@ -625,7 +625,7 @@ All arithmetic in integer paise with `Math.ceil` toward the merchant; unit tests
 
 ---
 
-### Task 16: Compliance scanner (keyword pre-screen + LLM rubric + evidence verification)
+### Task 16: Compliance scanner (keyword pre-screen + LLM rubric + evidence verification) — **DONE by Codex (2026-09-05) · verified GREEN by Claude (2026-09-06; classify runs before the flag transaction)**
 
 **Goal.** A background job scans product descriptions against a fixed rubric of prohibited/restricted categories; deterministic keywords run first; the LLM classifies with a verbatim evidence span that code verifies; flags land on the dashboard.
 
@@ -643,7 +643,7 @@ All arithmetic in integer paise with `Math.ceil` toward the merchant; unit tests
 
 ---
 
-### Task 17: Web shell — design system, navigation, theme, footer, API client, SSE hook, GlowInput
+### Task 17: Web shell — design system, navigation, theme, footer, API client, SSE hook, GlowInput — **UNLOCKED 2026-09-06 (Sprint 3: T17–T22 built by Claude as Lead Frontend Developer)**
 
 **Goal.** The dashboard skeleton every page task builds on. Read `Design.md` §1–3, 5.3, 7, 8 first.
 

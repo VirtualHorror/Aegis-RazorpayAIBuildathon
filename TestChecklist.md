@@ -582,6 +582,36 @@ $ eslint src test scripts ../../db/seed ../../scripts --max-warnings 0
 
 The focused suite covers the fixed rubric and keyword vocabulary, case-sensitive evidence verification, keyword/model disagreement, malformed and unavailable model fallbacks, and concurrent scans producing one flag per product/run.
 
+## Sprint 2 verification — T10–T16 (Claude, 2026-09-06)
+
+Lightning verification of the batched sprint (D-052). Two questions were asked of every changed file: *is every migration uniquely numbered with a down file?* and *does any transaction that holds `SELECT … FOR UPDATE` ever wait on a model call?*
+
+```text
+$ ls db/migrations
+0001_init.sql  0002_readonly_grants.sql  0003_projection_guards.sql  0004_ledger_unique.sql   (+ matching .down.sql for each; no duplicate prefix)
+
+$ grep -rn "FOR UPDATE" apps/api/src --include=*.ts | grep -v .test. | wc -l
+30      # every site inspected; the lock-holding transactions in the new modules are:
+        #   compliance/scanner.ts:113-142   BEGIN → pg_advisory_xact_lock → FOR UPDATE → UPDATE/INSERT → COMMIT   (model call at :63, before BEGIN)
+        #   compliance/routes.ts:47-58      status transition + audit                                                (no model call)
+        #   orchestrator/attribution.ts:38   ledger credit under actions FOR UPDATE                                    (no model call)
+        #   x402/facilitator.ts:24           nonce FOR UPDATE, HMAC verify in TypeScript                               (no model call)
+        #   routes/approvals.ts:126,161      evidence review / guardrail update                                        (no model call)
+        #   modules/subscription-salvager/index.ts:132-164  dunning retry; COMMIT precedes handleSynthetic            (no model dependency)
+        # model calls: b2b-negotiator/index.ts:106 and chargeback-evidence/index.ts:49 run in propose() from
+        # EventOrchestrator.runActionPath (pool, no open transaction); nlq/service.ts:110,149,175 run before
+        # executeReadonly opens the readonly transaction.
+
+$ pg_isready
+/var/run/postgresql:5432 - accepting connections
+$ pnpm typecheck && pnpm test && pnpm lint      # exit 0
+packages/shared test:  Test Files  5 passed (5)   Tests  47 passed (47)
+apps/api test:         Test Files 48 passed (48)  Tests 210 passed (210)
+lint: packages/shared, apps/api, apps/web — Done
+```
+
+Verdict: **GREEN** for T10, T11, T12, T13, T14, T15, T16. Tags `task-10-done` … `task-16-done` moved to the verification commit.
+
 ## T17–T22 — web (acceptance, pending; verified by the Architect in Chrome)
 
 ```bash
