@@ -114,7 +114,7 @@ export async function handleRazorpayWebhook(
   const chaos = (options.config.NODE_ENV === 'development' || options.config.NODE_ENV === 'test') && chaosHeader === 'llm_down'
     ? 'llm_down'
     : undefined;
-  return runWithLlmChaos(chaos, () => handleRazorpayWebhookInContext(request, reply, options));
+  return runWithLlmChaos(chaos, () => handleRazorpayWebhookInContext(request, reply, options, chaos));
 }
 
 /** Handle a request after its development-only chaos context has been installed. */
@@ -122,6 +122,7 @@ async function handleRazorpayWebhookInContext(
   request: FastifyRequest,
   reply: FastifyReply,
   options: RazorpayWebhookHandlerOptions,
+  chaos?: 'llm_down',
 ): Promise<void> {
   if (!options.db) {
     await reply.code(503).send({ error: 'database_unavailable' });
@@ -217,6 +218,7 @@ async function handleRazorpayWebhookInContext(
     sha256,
     signatureValid: true,
     rzpCreatedAt: dateFromCreatedAt(payload.created_at),
+    chaos,
   });
   const status = result.inserted ? 'accepted' : 'duplicate';
   await notify(request, options, { eventId, eventType: payload.event, status, signatureValid: true });

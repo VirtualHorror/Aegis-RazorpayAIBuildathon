@@ -395,7 +395,7 @@ RETURNING *;
 
 **Verify.** `TestChecklist.md §T6`. **Docs.** `Decisions.md` (only if you deviated), `Flow.md` F4 prerequisites, `Bug-Feature.md` F-008.
 
-**Verified by Claude, 2026-09-05.** GREEN. Full gate green on three consecutive runs (api 18 files / 89 tests). Changed during verification: the duplicated diagnosis contract was single-sourced onto the prompt registry (D-045), `apps/api/test/chaos.integration.test.ts` was added because the `x-aegis-chaos` header and its production gate (C-D5) had no coverage, and the order-dependent T4 subscription-precedence assertion was made deterministic (B-008). B-009 (chaos cannot reach the worker) and B-007 (cold-start projection deadlock) are open and both land on Task 7/8.
+**Verified by Claude, 2026-09-05.** GREEN. Full gate green on three consecutive runs (api 18 files / 89 tests). Changed during verification: the duplicated diagnosis contract was single-sourced onto the prompt registry (D-045), `apps/api/test/chaos.integration.test.ts` was added because the `x-aegis-chaos` header and its production gate (C-D5) had no coverage, and the order-dependent T4 subscription-precedence assertion was made deterministic (B-008). B-009 (chaos cannot reach the worker) and B-007 (cold-start projection deadlock) were open at this T6 checkpoint; both were fixed during the T8/T9 run (see `Bug-Feature.md` B-007/B-009).
 
 ---
 
@@ -436,7 +436,7 @@ export interface Diagnostician { diagnose(input: { event: WebhookEventRow; paylo
 
 **Verify.** `TestChecklist.md §T7`. **Docs.** `Flow.md` F4 → live; `Bug-Feature.md` F-009.
 
-**Verified by Claude, 2026-09-05.** GREEN. Full gate green on three consecutive runs (api 23 files / 130 tests). Cross-check table implemented exactly as specified, all eight rows tested. C-A7 re-proved on the real snapshot shape rather than a fixture; C-A6 holds structurally (`db: Pool`) and now has a non-vacuous ordering test; the `numeric(4,3)` confidence cast is load-bearing (the driver really returns `"0.900"`); D-045 honoured — one definition of the contract. Changed during verification: B-010 (`maskPii` flattened every `Date` to `{}`, silently dropping all five timestamps from the prompt — T7 is the first task to mask a database row) and the two tests covering B-010 and C-A6. B-007 and B-009 remain open; B-009 lands on Task 8.
+**Verified by Claude, 2026-09-05.** GREEN. Full gate green on three consecutive runs (api 23 files / 130 tests). Cross-check table implemented exactly as specified, all eight rows tested. C-A7 re-proved on the real snapshot shape rather than a fixture; C-A6 holds structurally (`db: Pool`) and now has a non-vacuous ordering test; the `numeric(4,3)` confidence cast is load-bearing (the driver really returns `"0.900"`); D-045 honoured — one definition of the contract. Changed during verification: B-010 (`maskPii` flattened every `Date` to `{}`, silently dropping all five timestamps from the prompt — T7 is the first task to mask a database row) and the two tests covering B-010 and C-A6. B-007 and B-009 were still open at this T7 checkpoint; B-007 was fixed by D-048 and B-009 by D-049 during the T8/T9 run.
 
 ---
 
@@ -452,12 +452,12 @@ export interface Diagnostician { diagnose(input: { event: WebhookEventRow; paylo
 **Interfaces.** `ROUTES` as in `Flow.md F3`; `EventBus { publish(name: BusEvent, data: unknown): void; subscribe(fn): () => void }`; bus event names: `event.received`, `event.duplicate`, `event.rejected`, `event.processed`, `diagnosis.created`, `action.proposed`, `action.blocked`, `action.pending_approval`, `action.executed`, `action.failed`, `action.rejected`, `message.simulated_sent`, `x402.settled`, `x402.rejected`, `compliance.flag`, `job.dead_letter`.
 
 **Steps.**
-- [ ] 8.1 Routing table (deterministic, exhaustive for T5 scenarios; unknown → `ignored`).
-- [ ] 8.2 `handle(eventId, workerId)` exactly as `Flow.md F3` steps 1–7. Status decision: `!guard.pass → blocked`; else `(proposal.requiresApproval || -proposal.moneyImpactPaise > config.auto_approve_limit_paise) → pending_approval`; else `approved` → `executeAction`. Orchestrator-level rules always run: kill switch, per-customer cooldown (`message_cooldown_hours`, from `outbound_messages`), quiet hours (`quiet_hours_local` using the customer's country → timezone map `IN: Asia/Kolkata, US: America/New_York, GB: Europe/London, AE: Asia/Dubai, SG: Asia/Singapore`), daily discount budget (`SUM(-money_impact_paise) today` from `actions WHERE status IN ('approved','executed','pending_approval')`).
-- [ ] 8.3 `executeAction`: `SELECT … FOR UPDATE` on the action, assert `approved`, call `module.execute`, persist `result`, outbound messages (recipient masked `+91••••••1234`), ledger entries, status `executed|failed`, `executed_at`, audit row, bus publish. Idempotent: an already `executed` action returns early.
-- [ ] 8.4 SSE route: headers `content-type: text/event-stream`, `cache-control: no-cache`, `x-accel-buffering: no`; heartbeat comment `: ping` every 15 s; unsubscribe on close; CORS for `WEB_ORIGIN`.
-- [ ] 8.5 Tests: fake module asserts call order and that `guard` is not called when `propose` returns null; kill switch → every proposal `blocked` with rule `kill_switch`; money impact above limit → `pending_approval`; duplicate idempotency_key → second run skips; SSE test with `app.inject` streaming.
-- [ ] 8.6 Commit `feat(t08): event orchestrator, action audit trail and SSE bus`.
+- [x] 8.1 Routing table (deterministic, exhaustive for T5 scenarios; unknown → `ignored`).
+- [x] 8.2 `handle(eventId, workerId)` exactly as `Flow.md F3` steps 1–7. Status decision: `!guard.pass → blocked`; else `(proposal.requiresApproval || -proposal.moneyImpactPaise > config.auto_approve_limit_paise) → pending_approval`; else `approved` → `executeAction`. Orchestrator-level rules always run: kill switch, per-customer cooldown (`message_cooldown_hours`, from `outbound_messages`), quiet hours (`quiet_hours_local` using the customer's country → timezone map `IN: Asia/Kolkata, US: America/New_York, GB: Europe/London, AE: Asia/Dubai, SG: Asia/Singapore`), daily discount budget (`SUM(-money_impact_paise) today` from `actions WHERE status IN ('approved','executed','pending_approval')`).
+- [x] 8.3 `executeAction`: `SELECT … FOR UPDATE` on the action, assert `approved`, call `module.execute`, persist `result`, outbound messages (recipient masked `+91••••••1234`), ledger entries, status `executed|failed`, `executed_at`, audit row, bus publish. Idempotent: an already `executed` action returns early.
+- [x] 8.4 SSE route: headers `content-type: text/event-stream`, `cache-control: no-cache`, `x-accel-buffering: no`; heartbeat comment `: ping` every 15 s; unsubscribe on close; CORS for `WEB_ORIGIN`.
+- [x] 8.5 Tests: fake module asserts call order and that `guard` is not called when `propose` returns null; kill switch → every proposal `blocked` with rule `kill_switch`; money impact above limit → `pending_approval`; duplicate idempotency_key → second run skips; SSE test with `app.inject` streaming.
+- [x] 8.6 Commit `feat(t08): event orchestrator, action audit trail and SSE bus`.
 
 **Verify.** `TestChecklist.md §T8`. **Docs.** `Flow.md` F3, F10 → live; `Bug-Feature.md` F-010; `Architecture.md §13` status row.
 
@@ -472,12 +472,12 @@ export interface Diagnostician { diagnose(input: { event: WebhookEventRow; paylo
 **Interfaces.** `templates.ts` exports `TEMPLATES: Record<Locale, { retry_link: TemplateSpec; alt_method: TemplateSpec; cart_nudge: TemplateSpec }>` for locales `en-IN, hi-IN, ta-IN, kn-IN, en-US, en-GB, en-AE, en-SG` (fallback `en-IN`); `TemplateSpec = { name: string; language: string; bodyParams: (p: TemplateParams) => string[]; buttonUrl: (link: string) => string }`. `links.ts`: `retryLink(paymentId, now) = 'https://rzp.io/l/aegis-' + base32(sha256(paymentId + ':' + dayBucket)).slice(0, 8)` (deterministic per payment per day so re-proposals reuse it).
 
 **Steps.**
-- [ ] 9.1 `canHandle`: event `payment.failed`, `diagnosis` present, strategy ∈ the three, `entity.customer` present.
-- [ ] 9.2 `propose`: `kind` = `whatsapp_retry_link | whatsapp_alt_method | whatsapp_cart_nudge` (by strategy); `payload` = Meta Cloud API template message: `{ messaging_product:'whatsapp', to:<contact>, type:'template', template:{ name, language:{code}, components:[{type:'body',parameters:[…]},{type:'button',sub_type:'url',index:'0',parameters:[{type:'text',text:<link>}]}] } }`; amount formatted by `formatInr(paise)` in `packages/shared/src/money.ts` (the only place formatting happens for messages); `explanation` = diagnosis rationale + locale reason + link; `expectedRecoveryPaise = amount`; `moneyImpactPaise = 0`; `idempotencyKey = checkout_recovery:payment:<id>:1`; `requiresApproval = false`.
-- [ ] 9.3 `guard` (pure): `customer.opted_out === false`; `payment.amount_paise > 0`; strategy allowed; (cooldown + quiet hours are orchestrator-level, T8).
-- [ ] 9.4 `execute`: return `outbound: { channel:'whatsapp', recipientMasked, locale, template, payload, status:'simulated_sent' }`, `result: { link }`. `compensate`: suppressed row.
-- [ ] 9.5 Tests: locale → template; `hi-IN` body strings are Hindi; opted-out → guard fails with rule `customer_opted_out`; link deterministic within a day; payload validates against a zod `WhatsAppTemplateMessage` schema (add to shared).
-- [ ] 9.6 Commit `feat(t09): checkout recovery module`.
+- [x] 9.1 `canHandle`: event `payment.failed`, `diagnosis` present, strategy ∈ the three, `entity.customer` present.
+- [x] 9.2 `propose`: `kind` = `whatsapp_retry_link | whatsapp_alt_method | whatsapp_cart_nudge` (by strategy); `payload` = Meta Cloud API template message: `{ messaging_product:'whatsapp', to:<contact>, type:'template', template:{ name, language:{code}, components:[{type:'body',parameters:[…]},{type:'button',sub_type:'url',index:'0',parameters:[{type:'text',text:<link>}]}] } }`; amount formatted by `formatInr(paise)` in `packages/shared/src/money.ts` (the only place formatting happens for messages); `explanation` = diagnosis rationale + locale reason + link; `expectedRecoveryPaise = amount`; `moneyImpactPaise = 0`; `idempotencyKey = checkout_recovery:payment:<id>:1`; `requiresApproval = false`.
+- [x] 9.3 `guard` (pure): `customer.opted_out === false`; `payment.amount_paise > 0`; strategy allowed; (cooldown + quiet hours are orchestrator-level, T8).
+- [x] 9.4 `execute`: return `outbound: { channel:'whatsapp', recipientMasked, locale, template, payload, status:'simulated_sent' }`, `result: { link }`. `compensate`: suppressed row.
+- [x] 9.5 Tests: locale → template; `hi-IN` body strings are Hindi; opted-out → guard fails with rule `customer_opted_out`; link deterministic within a day; payload validates against a zod `WhatsAppTemplateMessage` schema (add to shared).
+- [x] 9.6 Commit `feat(t09): checkout recovery module`.
 
 **Verify/Docs.** `TestChecklist.md §T9–T12` (checkout lines); `Flow.md` F5 bullet → live; `Bug-Feature.md` F-011.
 

@@ -31,6 +31,8 @@ export interface JobHandlerContext {
   db: pg.Pool;
   logger: WorkerLogger;
   workerId: string;
+  /** Optional orchestrator supplied by the production composition; omitted by projection-only tests. */
+  orchestrator?: { handle(eventId: string, workerId: string): Promise<unknown> };
 }
 
 export interface WorkerPools {

@@ -7,7 +7,7 @@
 
 1. `apps/api/src/server.ts` `main()` → `dotenv` loads `<repo>/.env` (path from `src/db/paths.ts`) → `loadConfig()` from `src/config.ts` (zod-validated env; exits with a readable error on a missing/invalid variable).
 2. `createPools(config)` in `src/db/pool.ts` → two `pg.Pool`s (`rw`, `readonly`). Pools are lazy; no connection is made until first query.
-3. `buildApp({ config, db, probeDb })` in `src/app.ts` → registers `@fastify/cors` (dashboard origin only), `@fastify/rate-limit` (600/min), UUID request ids, the error handler (`normalizeError` → `{ error, details?, request_id }`), the 404 handler, and routes (`/health`, live `/api/v1/system`, plus the encapsulated `/webhooks/razorpay` ingress; x402 and stream later). `probeDb` is injected so tests simulate an unreachable database.
+3. `buildApp({ config, db, probeDb })` in `src/app.ts` → registers `@fastify/cors` (dashboard origin only), `@fastify/rate-limit` (600/min), UUID request ids, the error handler (`normalizeError` → `{ error, details?, request_id }`), the 404 handler, and routes (`/health`, live `/api/v1/system`, `/api/v1/stream`, plus the encapsulated `/webhooks/razorpay` ingress; x402 later). `probeDb` is injected so tests simulate an unreachable database.
    3a. `migrationStatus(pools.rw, MIGRATIONS_DIR)`: the numbered `0001_init`, `0002_readonly_grants`, and `0003_projection_guards` migrations are checked for pending files and checksum drift; pending migrations → exit 1 (unless `AEGIS_ALLOW_PENDING_MIGRATIONS=true`), while an unreachable database → warn and continue degraded.
 4. `app.listen({ port: config.API_PORT, host: '0.0.0.0' })`.
 5. `[live]` after listen: `startWorker({ pools, logger, handlers, concurrency })` spins `WORKER_CONCURRENCY` loops and the stale-lock sweeper (F3) unless `AEGIS_WORKER_ENABLED=false`.
@@ -37,12 +37,12 @@ POST /webhooks/razorpay
    │       IF inserted AND signatureValid AND status != 'ignored' AND eventType IN KNOWN_EVENT_TYPES: INSERT INTO jobs(kind='process_event', payload={eventId}, dedupe_key='process_event:'+eventId)
    │       IF inserted AND signatureValid AND status != 'ignored' AND eventType NOT IN KNOWN_EVENT_TYPES: UPDATE webhook_events SET status='ignored'
    │     COMMIT
-   ├─ onEvent({eventId,eventType,status,...}) hook (noop until the T8 bus)                  src/ingress/index.ts
+   ├─ onEvent({eventId,eventType,status,...}) → EventBus (`event.received|duplicate|rejected|processed`)  src/ingress/index.ts
    └─ 200 {"status":"accepted"|"duplicate","event_id":…}
 ```
 Race: two identical deliveries at the same instant → one `INSERT` wins, the other blocks on the unique index and lands in `DO UPDATE` → exactly one job. Tested with `Promise.all` of 20 concurrent posts (T3 integration test).
 
-## F3. Worker + orchestrator [live — Task 4; planned T8]
+## F3. Worker + orchestrator [live — Tasks 4 and 8]
 
 ```
 src/worker/job-runner.ts  runLoop(workerId)
@@ -69,19 +69,19 @@ disputes ─▶ payments ─▶ orders ─▶ customers
                       invoices ─▶ customers
 ```
 
-`projectPayment` therefore takes the `orders` row (`lockOrder`) *before* upserting the customer, and only creates a missing order (`createOrder`) afterwards, because `orders.customer_id` is itself a foreign key. Getting this backwards deadlocked a concurrent `order.paid` (B-006).
+`projectOrder` and `projectPayment` both call `lockOrderSlot` before upserting a customer. Existing orders are locked directly; a first sighting inserts a NULL-customer placeholder, so the order identity is reserved even when `SELECT ... FOR UPDATE` would otherwise find no row (B-007). The order path fills its own placeholder without a version bump, while the payment path links the customer before inserting the payment FK. Getting this backwards deadlocked a concurrent `order.paid` (B-006/B-007).
 
-`EventOrchestrator.handle(eventId)` (planned T8; Task 4's process handler currently stops after projection):
+`EventOrchestrator.handle(eventId, workerId)` (live):
 1. `loadEvent` → `RazorpayWebhookSchema.parse(payload)`; mark `webhook_events.status='processing'`.
 2. `route = ROUTES[event.event_type]` (`src/orchestrator/routing.ts`); missing → `ignored`.
 3. `withTransaction(rw, async (tx) => { entity = await projections[route.entity].apply(tx, payload) })` — projections do `SELECT … FOR UPDATE` then apply the precedence rule (`packages/shared/src/domain/precedence.ts`) and upsert. **Transaction ends here** (C-A6).
-4. `if (route.diagnose) diagnosis = await diagnostician.diagnose({ event, payload, entity })` (F4). Never inside a transaction.
+4. `if (route.diagnose)`: when `entity.applied`, query `prior_failures_24h` from failed payments in the rolling 24-hour window (excluding the current payment), then call `diagnostician.diagnose({ event, payload, entity, priorFailures24h })` (F4). Unapplied snapshots receive the deterministic skipped diagnosis without a history query. Never call the diagnostician inside a projection transaction.
 5. `config = await loadGuardrailConfig(rw)` (`src/db/repos/guardrails.ts`, live since T2; throws `GuardrailConfigError` when a seeded key is missing or malformed); `ctx = { event, payload, entity, diagnosis, config, now, logger }`.
 6. `for m of modules.filter(m => m.handles.includes(type) && m.canHandle(ctx))`:
    - `proposal = await m.propose(ctx)`; `null` → log "no action" with reason.
    - `guard = m.guard(proposal, ctx)`; plus orchestrator-level rules: kill switch, cooldown, quiet hours, daily budget (`src/guardrails/rules.ts`).
    - `status = !guard.pass ? 'blocked' : (proposal.requiresApproval || -proposal.moneyImpactPaise > config.auto_approve_limit_paise) ? 'pending_approval' : 'approved'`.
-   - `INSERT INTO actions … ON CONFLICT (idempotency_key) DO NOTHING RETURNING *`; conflict → skip (already proposed).
+   - `INSERT INTO actions … ON CONFLICT (idempotency_key) DO NOTHING RETURNING *`; conflict → skip an existing blocked/pending/executed row, but resume an existing `approved` row after a worker crash.
    - `if status === 'approved'` → `executeAction(action, ctx)` (F6 step 3).
    - `bus.publish('action.<status>', …)`.
 7. `webhook_events.status='processed'`; audit row `actor='worker:<id>'`.
@@ -90,8 +90,8 @@ disputes ─▶ payments ─▶ orders ─▶ customers
 
 Task 6 supplies the provider boundary used by this flow: `src/llm/factory.ts` resolves `auto` once at boot, `src/llm/resilient.ts` applies timeout/retry/breaker and request-scoped development chaos, and `src/llm/mask.ts` removes PII before prompts are built. `src/llm/prompts/index.ts` is the single definition of `ROOT_CAUSES`/`STRATEGIES`/`DiagnoseOutputSchema` (D-045) — T7's `diagnosis/schema.ts` re-exports it rather than restating it. `GET /api/v1/system` exposes only `{ provider, model, modelFast }`. Anthropic and OpenAI coverage is SDK-mocked on this machine; no live model output is claimed.
 
-Two boundaries this flow must respect when it goes live:
-- **Chaos does not cross into the worker (B-009).** `x-aegis-chaos: llm_down` lives in an `AsyncLocalStorage` store installed around the *ingress request*. The T7 diagnostician intentionally does not read `isLlmDown()` or the chaos store; Task 8 owns carrying the development-only flag on the `process_event` job payload and re-entering `runWithLlmChaos` in the worker.
+Two boundaries this flow must respect:
+- **Chaos crosses the durable queue explicitly (B-009, fixed in T8).** In development/test, ingress validates `x-aegis-chaos: llm_down`, stores that literal on the `process_event` job payload, and keeps the production gate at ingress. The worker accepts only that bounded value and re-enters `runWithLlmChaos` around the orchestrator call; the T7 diagnostician remains independent of the request store.
 - **The LLM call sits outside the projection transaction (C-A6).** `resilient.ts` retries once and can wait up to two timeout windows (2 × `LLM_TIMEOUT_MS`) before it gives up, so it must never run while a projection holds row locks.
 
 ```
@@ -108,11 +108,11 @@ The projection snapshot's `applied` flag is a deterministic precedence result. W
 delivery), the diagnostician returns a marked, non-persisted fallback result and does not spend an LLM call; only an
 applied snapshot creates a diagnosis row.
 
-## F5. Action modules [planned T9–T12]
+## F5. Action modules [live — T9; planned T10–T12]
 
 Every module lives in `src/modules/<name>/index.ts` and follows `propose → guard → execute`:
 
-- **checkout_recovery** (T9): `payment.failed` with `diagnosis.strategy ∈ {RETRY_LINK_LOCALIZED, RETRY_ALTERNATE_METHOD, CART_RECOVERY_NUDGE}` → `templates.ts` picks template by `customer.locale` → `payload` = WhatsApp template JSON with a deterministic retry link `rzp.io/l/aegis-<shortid>` → guards: opted_out, cooldown, quiet hours, max 1 retry link per payment → execute: insert `outbound_messages` (`simulated_sent`), schedule nothing.
+- **checkout_recovery** (T9, live): `payment.failed` with `diagnosis.strategy ∈ {RETRY_LINK_LOCALIZED, RETRY_ALTERNATE_METHOD, CART_RECOVERY_NUDGE}` → `templates.ts` picks template by `customer.locale` → `payload` = schema-validated WhatsApp template JSON with a masked recipient and deterministic daily retry link `rzp.io/l/aegis-<shortid>` → guards: opted_out, positive amount, strategy, plus orchestrator cooldown/quiet hours → execute: insert `outbound_messages` (`simulated_sent`), schedule nothing.
 - **subscription_salvager** (T10): `subscription.pending|halted` → `state.ts` transition table → proposal `dunning_retry` (step n) with WhatsApp payload + `scheduleFollowUp` job `dunning_retry` at `dunning_schedule_hours[n]` → guards: `retry_count < max_dunning_retries`, cooldown, quiet hours → on `subscription.charged|activated` → `salvage_state='recovered'` + ledger `recovered_revenue`.
 - **b2b_negotiator** (T11): `invoice.expired` (amount ≥ ₹50,000) → `pricing.ts` computes `offerPaise = max(floor, amount·(1 − pct_round[n]))` with `pct_round=[5,10,15]` capped by `max_discount_pct` → LLM drafts the message text only (`draft_negotiation_message`), numbers injected by code → guards: floor, max pct, rounds, daily budget → `requiresApproval = true` when discount > auto_approve limit → execute: outbound message + `negotiation_state='offer_sent'` + `negotiation_expiry` job (72 h). Counter-offers arrive via the simulator as `invoice.updated` notes (`counter_paise`).
 - **chargeback_evidence** (T12): `payment.dispute.created` → `assemble.ts` collects payment, order, customer, delivery proof (from `orders.notes.delivery`), prior messages, refund policy → LLM writes `narrative` → `evidence_packets.review_status='requires_human_review'` → `actions.status='pending_approval'` → human approves (F6) → `submitted` (simulated).
@@ -158,9 +158,9 @@ POST /api/v1/ask {question}
 
 `POST /api/v1/compliance/scan` → enqueue `compliance_scan` job → `scanner.run()`: for each active product: `keywordHits = prescreen(description)` → `assessment = llm.completeJson(classify_compliance)` (fast tier) → `verifyEvidenceSpan(assessment, description)` (must be a verbatim substring; else `status='needs_review'`) → upsert `compliance_flags` → run row updated → `bus.publish('compliance.flag')`.
 
-## F10. Live updates [planned T8 + T17]
+## F10. Live updates [live — T8; planned T17]
 
-`EventBus` (Node `EventEmitter`) → `GET /api/v1/stream` writes `event: <name>\ndata: <json>\n\n`, heartbeat every 15 s, `Last-Event-ID` ignored (bus is not storage). Web: `useEventStream()` hook (`apps/web/src/lib/sse.ts`) with reconnect + backoff; pages merge SSE rows into SWR caches.
+`EventBus` (process-local, non-durable subscriber set) → `GET /api/v1/stream` writes `event: <name>\ndata: <json>\n\n`, sends `: ping` heartbeats every 15 s, unsubscribes on close, and ignores `Last-Event-ID` (the bus is not storage). The route sets `text/event-stream`, `no-cache`, `x-accel-buffering: no`, and the configured dashboard CORS origin. Web: `useEventStream()` hook (`apps/web/src/lib/sse.ts`) with reconnect + backoff; pages merge SSE rows into SWR caches.
 
 ## F11. Simulator and demo [live — Task 5; planned T23]
 

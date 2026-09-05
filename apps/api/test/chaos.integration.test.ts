@@ -120,12 +120,27 @@ integration('development-only LLM chaos header', () => {
     expect(result.providerCalls).toBe(0);
   });
 
+  it('persists the development chaos mode on the process_event job for the worker', async () => {
+    const result = await inject('development', { 'x-aegis-chaos': 'llm_down' }, 'evt_chaos_worker');
+
+    expect(result.statusCode).toBe(200);
+    const jobs = await pool.query<{ payload: Record<string, unknown> }>(
+      "SELECT payload FROM jobs WHERE dedupe_key = 'process_event:evt_chaos_worker'",
+    );
+    expect(jobs.rows).toHaveLength(1);
+    expect(jobs.rows[0]?.payload).toEqual({ eventId: 'evt_chaos_worker', chaos: 'llm_down' });
+  });
+
   it('ignores the chaos header in production (C-D5)', async () => {
     const result = await inject('production', { 'x-aegis-chaos': 'llm_down' }, 'evt_chaos_prod');
 
     expect(result.statusCode).toBe(200);
     expect(result.outcome.ok).toBe(true);
     expect(result.providerCalls).toBe(1);
+    const jobs = await pool.query<{ payload: Record<string, unknown> }>(
+      "SELECT payload FROM jobs WHERE dedupe_key = 'process_event:evt_chaos_prod'",
+    );
+    expect(jobs.rows[0]?.payload).toEqual({ eventId: 'evt_chaos_prod' });
   });
 
   it('leaves the LLM path untouched when the header is absent', async () => {

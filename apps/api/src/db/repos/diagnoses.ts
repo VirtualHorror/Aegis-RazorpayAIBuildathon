@@ -179,3 +179,31 @@ export const getDiagnosisById = getDiagnosis;
 export const getDiagnosisByEvent = listDiagnosesForEvent;
 export const findDiagnosisByEventId = listDiagnosesForEvent;
 export const findDiagnosesByEventId = listDiagnosesForEvent;
+
+/**
+ * Count earlier failed payments for a customer without taking a projection lock.
+ * Intent: the diagnosis stopping rule must receive database truth rather than a default zero (C-B3).
+ * Flow: count failed payment rows in the rolling 24-hour window -> exclude the payment currently being diagnosed so
+ *       the value represents prior failures -> return a safe integer before the model call.
+ */
+export async function countPriorFailures24h(
+  db: QueryDatabase,
+  customerId: string | null,
+  now: Date,
+  excludePaymentId?: string,
+): Promise<number> {
+  if (customerId === null) return 0;
+  const result = await db.query<{ count: number | string }>(
+    `SELECT count(*)::int AS count
+     FROM payments
+     WHERE customer_id = $1
+       AND status = 'failed'
+       AND COALESCE(last_event_at, rzp_created_at, created_at) >= $2::timestamptz - interval '24 hours'
+       AND COALESCE(last_event_at, rzp_created_at, created_at) <= $2::timestamptz
+       AND ($3::text IS NULL OR id <> $3)`,
+    [customerId, now, excludePaymentId ?? null],
+  );
+  const count = Number(result.rows[0]?.count ?? 0);
+  if (!Number.isSafeInteger(count) || count < 0) throw new Error(`invalid prior failure count ${String(result.rows[0]?.count)}`);
+  return count;
+}

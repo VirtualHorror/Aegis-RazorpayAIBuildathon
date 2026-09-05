@@ -13,6 +13,8 @@ import { simRoutes } from './routes/sim';
 import { systemRoutes } from './routes/system';
 import { createLlmClient } from './llm/factory';
 import type { LlmClient } from './llm/client';
+import { createEventBus, type EventBus } from './bus/event-bus';
+import { sseRoute } from './bus/sse-route';
 
 export interface AppDeps {
   config: Config;
@@ -26,6 +28,8 @@ export interface AppDeps {
   logger?: FastifyServerOptions['logger'];
   /** Inject a client in tests or in a larger boot composition; production defaults to the factory. */
   llm?: LlmClient;
+  /** Shared process-local bus used by ingress notifications, the orchestrator, and SSE clients. */
+  bus?: EventBus;
 }
 
 /**
@@ -36,6 +40,7 @@ export interface AppDeps {
  */
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const { config } = deps;
+  const bus = deps.bus ?? createEventBus();
   const app = Fastify({
     logger: deps.logger ?? loggerOptions(config),
     genReqId: () => randomUUID(),
@@ -63,11 +68,22 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(healthRoutes, { probeDb: deps.probeDb, version: AEGIS_VERSION });
   const llm = deps.llm ?? createLlmClient(config, app.log);
   await app.register(systemRoutes, { llm });
+  await app.register(sseRoute, { bus, webOrigin: config.WEB_ORIGIN });
   await app.register(ingressPlugin, {
     prefix: '/webhooks',
     config,
     db: deps.db ?? null,
-    onEvent: deps.onEvent,
+    onEvent: async (notification) => {
+      const eventName = notification.status === 'accepted'
+        ? 'event.received'
+        : notification.status === 'duplicate'
+          ? 'event.duplicate'
+          : notification.status === 'rejected'
+            ? 'event.rejected'
+            : 'event.processed';
+      bus.publish(eventName, notification);
+      await deps.onEvent?.(notification);
+    },
   });
   if (config.NODE_ENV !== 'production') {
     await app.register(simRoutes, { prefix: '/api/v1', config: { RAZORPAY_WEBHOOK_SECRET: config.RAZORPAY_WEBHOOK_SECRET }, db: deps.db ?? null });

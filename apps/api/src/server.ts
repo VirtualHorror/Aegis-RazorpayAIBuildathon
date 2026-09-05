@@ -7,6 +7,10 @@ import { createPools, probeDatabase } from './db/pool';
 import { createRegistry } from './worker/registry';
 import { processEventHandler } from './worker/process-event';
 import { startWorker } from './worker/job-runner';
+import { createLlmClient } from './llm/factory';
+import { createEventBus } from './bus/event-bus';
+import { EventOrchestrator } from './orchestrator/EventOrchestrator';
+import { createModuleRegistry } from './orchestrator/registry';
 
 /**
  * Process entry point.
@@ -22,8 +26,17 @@ async function main(): Promise<void> {
   const pools = createPools(config, (error, pool) => {
     appRef.current?.log.error({ err: error, pool }, 'idle database client error');
   });
-  const app = await buildApp({ config, db: pools.rw, probeDb: () => probeDatabase(pools.rw) });
+  const llm = createLlmClient(config);
+  const bus = createEventBus();
+  const app = await buildApp({ config, db: pools.rw, probeDb: () => probeDatabase(pools.rw), llm, bus });
   appRef.current = app;
+  const orchestrator = new EventOrchestrator({
+    db: pools.rw,
+    llm,
+    bus,
+    logger: app.log,
+    modules: createModuleRegistry({ disabled: config.AEGIS_MODULES_DISABLED }),
+  });
 
   // Intent: refuse to serve stale schema by accident, but keep booting (degraded) when the DB is simply unreachable.
   try {
@@ -44,7 +57,9 @@ async function main(): Promise<void> {
     ? startWorker({
         pools,
         logger: app.log,
-        handlers: createRegistry({ process_event: processEventHandler }),
+        handlers: createRegistry({
+          process_event: async (job, context) => processEventHandler(job, { ...context, orchestrator }),
+        }),
         concurrency: config.WORKER_CONCURRENCY,
         pollIntervalMs: config.WORKER_POLL_MS,
       })

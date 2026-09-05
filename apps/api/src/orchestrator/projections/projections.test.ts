@@ -243,4 +243,54 @@ integration('entity projections', () => {
     expect((await pool.query<{ status: string; order_id: string; version: number }>('SELECT status, order_id, version FROM payments WHERE id = $1', ['pay_lock_order'])).rows[0])
       .toMatchObject({ status: 'captured', order_id: 'order_lock_order', version: 1 });
   }, 20_000);
+
+  it('reserves an unseen order slot before the payment customer lock', async () => {
+    // Intent: an absent-row `FOR UPDATE` acquires nothing. A payment that then upserts its customer can deadlock an
+    // order transaction holding an uncommitted order row and waiting for that same customer (B-007).
+    // Flow: order transaction inserts the unseen order slot -> payment transaction must wait on that slot before
+    //       touching customers -> order projection completes and commits -> payment resumes without an ABBA cycle.
+    const paymentEvent = webhook('payment.captured', 'payment', {
+      entity: 'payment', id: 'pay_cold_start_lock', amount: 149900, currency: 'INR', status: 'captured',
+      order_id: 'order_cold_start_lock', customer_id: 'cus_cold_start_lock', contact: '+91******42',
+    }, 1_757_000_070);
+    const orderEvent = webhook('order.paid', 'order', {
+      entity: 'order', id: 'order_cold_start_lock', amount: 149900, currency: 'INR', status: 'paid', customer_id: 'cus_cold_start_lock',
+    }, 1_757_000_071);
+    await insertEvent(pool, 'evt_cold_start_payment', paymentEvent);
+    await insertEvent(pool, 'evt_cold_start_order', orderEvent);
+
+    const orderTx = await pool.connect();
+    const paymentTx = await pool.connect();
+    try {
+      await orderTx.query('BEGIN');
+      await paymentTx.query('BEGIN');
+      await orderTx.query(
+        `INSERT INTO orders (id, customer_id, amount_paise, currency, status, items, notes, version)
+         VALUES ($1, NULL, $2, $3, 'created', '[]'::jsonb, '{}'::jsonb, 1)`,
+        ['order_cold_start_lock', 149900, 'INR'],
+      );
+
+      const payment = projectPayment(paymentTx, paymentEvent, { eventId: 'evt_cold_start_payment', eventAt: new Date(1_757_000_070_000) });
+      await waitForLockWait(pool);
+
+      const order = await projectOrder(orderTx, orderEvent, { eventId: 'evt_cold_start_order', eventAt: new Date(1_757_000_071_000) });
+      await orderTx.query('COMMIT');
+      expect(order.applied).toBe(true);
+
+      await payment;
+      await paymentTx.query('COMMIT');
+    } finally {
+      await orderTx.query('ROLLBACK').catch(() => undefined);
+      await paymentTx.query('ROLLBACK').catch(() => undefined);
+      orderTx.release();
+      paymentTx.release();
+    }
+
+    expect((await pool.query<{ status: string; version: number; last_event_id: string }>(
+      'SELECT status, version, last_event_id FROM orders WHERE id = $1', ['order_cold_start_lock'],
+    )).rows[0]).toMatchObject({ status: 'paid', version: 2, last_event_id: 'evt_cold_start_order' });
+    expect((await pool.query<{ status: string; order_id: string; version: number; last_event_id: string }>(
+      'SELECT status, order_id, version, last_event_id FROM payments WHERE id = $1', ['pay_cold_start_lock'],
+    )).rows[0]).toMatchObject({ status: 'captured', order_id: 'order_cold_start_lock', version: 1, last_event_id: 'evt_cold_start_payment' });
+  }, 20_000);
 });

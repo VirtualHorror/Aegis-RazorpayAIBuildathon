@@ -165,7 +165,7 @@ async function markSucceeded(pool: pg.Pool, job: JobRow, workerId: string): Prom
       await tx.query(
         `UPDATE webhook_events
          SET status = 'processed', processed_at = COALESCE(processed_at, now()), last_error = NULL
-         WHERE event_id = $1 AND signature_valid = true`,
+         WHERE event_id = $1 AND signature_valid = true AND status <> 'ignored'`,
         [eventId],
       );
     }

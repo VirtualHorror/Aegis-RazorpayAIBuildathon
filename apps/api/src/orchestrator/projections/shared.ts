@@ -86,6 +86,38 @@ export async function projectCustomer(tx: pg.PoolClient, entity: ProjectionEntit
   return upsertCustomerFromPayload(tx, customerInput(entity));
 }
 
+/**
+ * Reserve an order identity before a projection touches its customer parent.
+ * Intent: `SELECT ... FOR UPDATE` takes no lock for an absent row, which leaves a cold-start gap where a payment
+ *         projection can lock `customers` before an order projection has reserved `orders` (B-007).
+ * Flow: lock an existing order -> otherwise insert a NULL-customer placeholder -> on a concurrent insert, wait for
+ *       its unique-key outcome and lock the committed row; callers then upsert customers and fill the placeholder.
+ */
+export async function lockOrderSlot(
+  tx: pg.PoolClient,
+  orderId: string | null,
+  amountPaise: number,
+  currency: string,
+): Promise<boolean> {
+  if (orderId === null) return false;
+  const existing = await tx.query<{ id: string }>('SELECT id FROM orders WHERE id = $1 FOR UPDATE', [orderId]);
+  if (existing.rows.length === 1) return false;
+
+  const inserted = await tx.query<{ id: string }>(
+    `INSERT INTO orders (id, customer_id, amount_paise, currency, status, items, notes, version)
+     VALUES ($1, NULL, $2, $3, 'created', '[]'::jsonb, '{}'::jsonb, 1)
+     ON CONFLICT (id) DO NOTHING
+     RETURNING id`,
+    [orderId, amountPaise, currency],
+  );
+  if (inserted.rows.length === 1) return true;
+
+  // Intent: an uncommitted competing INSERT is invisible to the first SELECT but the unique check waits for it.
+  // Flow: after ON CONFLICT returns no row, take the now-visible winner's row lock before touching customers.
+  await tx.query('SELECT id FROM orders WHERE id = $1 FOR UPDATE', [orderId]);
+  return false;
+}
+
 export async function loadCustomer(tx: pg.PoolClient, customerId: string | null): Promise<CustomerRow | null> {
   if (customerId === null) return null;
   const result = await tx.query<CustomerRow>(

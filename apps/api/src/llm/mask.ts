@@ -19,7 +19,8 @@ export function maskContact(value: string): string {
 
   const prefix = COUNTRY_PREFIXES.find((candidate) => trimmed.startsWith(candidate)) ?? (trimmed.startsWith('+') ? '+' : '');
   const suffixSource = prefix.length > 0 ? trimmed.slice(prefix.length) : trimmed;
-  const suffix = suffixSource.slice(-4);
+  // Keep a last-four hint only when there are hidden digits to show; a short contact has no safe visible suffix.
+  const suffix = suffixSource.length > 4 ? suffixSource.slice(-4) : '';
   const hiddenLength = Math.max(0, suffixSource.length - suffix.length);
   return `${prefix}${'•'.repeat(hiddenLength)}${suffix}`;
 }

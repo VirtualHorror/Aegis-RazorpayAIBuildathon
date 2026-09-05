@@ -14,10 +14,10 @@ function isCheckoutRecoveryStrategy(value: string | undefined): value is Checkou
 
 function paymentAmount(ctx: EventContext): number | null {
   const value = ctx.entity.row.amount_paise;
-  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return value;
   if (typeof value === 'string' && value.trim().length > 0) {
     const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
+    return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
   }
   return null;
 }
@@ -73,4 +73,3 @@ export function guardCheckoutRecovery(proposal: ActionProposal, ctx: EventContex
 export function paymentAmountPaise(ctx: EventContext): number {
   return paymentAmount(ctx) ?? 0;
 }
-

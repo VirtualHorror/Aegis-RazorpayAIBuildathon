@@ -269,11 +269,8 @@ pnpm sim burst --burst 400 --seed t5-verify-b400 --api http://127.0.0.1:4061
 # ✅ latency p50=332ms p95=385ms (over 232 delivered request(s); rate_limited excluded)
 
 pnpm sim burst --burst 40 --contend --seed t5-verify-contend2 --api http://127.0.0.1:4061
-# ✅ totals accepted=40 (all delivered, clear rate window)
-# ❌ simulator error: CRITICAL lock-order regression: burst job evt_000b_064cf66f has attempts=2 — exit 1
-#    This is B-007, an open T4 defect, not a simulator fault: pg_stat_database.deadlocks for `aegis` went 1 → 2 across one
-#    contended run and the transient jobs.last_error captured mid-retry reads `deadlock detected`. Expect exit 1 here until
-#    B-007 is fixed; then this becomes the standing lock-order probe.
+# ✅ cold-start interleaving regression: `projections.test.ts` 1 file / 9 tests passed, including B-007 order-slot reservation
+#    `lockOrderSlot` inserts a NULL-customer placeholder before the customer upsert; the contended-burst probe is rerun with T8's worker wiring
 
 pnpm sim payment_failed_3ds_intl --api http://127.0.0.1:4999
 # ✅ simulator error: simulator could not reach http://127.0.0.1:4999/webhooks/razorpay: fetch failed — exit 1
@@ -313,10 +310,13 @@ AEGIS_LLM_PROVIDER=stub pnpm --filter @aegis/api llm:smoke
 # Development-only chaos header, end to end (C-D5). The probe runs in the ingress `onEvent` hook, which the handler
 # awaits inside the chaos context, so this exercises header -> AsyncLocalStorage -> ResilientLlmClient, not the store alone.
 pnpm --filter @aegis/api exec vitest run test/chaos.integration.test.ts
-# ✅ 4 tests passed: development + `x-aegis-chaos: llm_down` -> LlmUnavailableError('chaos_llm_down') with the provider
-#    never invoked; production + the same header -> provider called normally; no header -> normal; no context leak.
-# ⚠️ B-009: this only covers LLM calls made *during the request*. The worker runs in its own async context, so the
-#    header cannot reach a diagnosis call made there. T7 must carry the flag on the job, not rely on the store.
+# ✅ 5 tests passed: development + `x-aegis-chaos: llm_down` -> LlmUnavailableError('chaos_llm_down') with the provider
+#    never invoked; the development mode is persisted on `process_event`; production + the same header -> provider
+#    called normally and no chaos field; no header -> normal; and the store does not leak past the request.
+
+# Worker boundary (B-009): the durable payload is re-entered before the orchestrator/LLM path.
+pnpm --filter @aegis/api exec vitest run src/worker/process-event.test.ts
+# ✅ 2 tests passed: `chaos: 'llm_down'` -> `chaos_llm_down` with zero provider calls; ordinary jobs remain unchanged.
 
 # Robust fail-closed check: override DATABASE_URL with an unreachable host; do not use `env -u` because simulate.ts
 # loads the repository .env after parsing flags. Run against an isolated API on a free port.
@@ -399,15 +399,38 @@ grep -rn "ROOT_CAUSES\s*=\|STRATEGIES\s*=\|DiagnoseOutputSchema\s*=" apps/api/sr
 # ✅ one definition (llm/prompts/index.ts:21,33,43); stub-fixtures.ts:12-13 and diagnosis/schema.ts re-export only.
 ```
 
-## T8 — orchestrator (acceptance, pending)
+## T8 — orchestrator (acceptance, green 2026-09-05)
 
 ```bash
-pnpm --filter @aegis/api test -- orchestrator
-# route table covers every scenario; unknown type → ignored; module propose/guard/execute called in order; blocked when kill_switch; pending_approval above limit; idempotency_key conflict skips
-curl -N localhost:4000/api/v1/stream         # heartbeat every 15s; events appear when sim runs
+pnpm --filter @aegis/api exec vitest run src/orchestrator src/guardrails src/bus src/modules/checkout-recovery test/orchestrator.integration.test.ts src/orchestrator/projections/projections.test.ts test/chaos.integration.test.ts src/worker/process-event.test.ts --no-file-parallelism --maxWorkers=1
+# ✅ Test Files 10 passed (10) · Tests 41 passed (41)
+#    deterministic routing, module call order, null-proposal guard omission, kill switch, cooldown/quiet-hours/budget,
+#    prior_failures_24h wiring, duplicate action idempotency, advisory serialization, audited execution, SSE framing,
+#    B-007 order-slot reservation, and B-009 durable chaos payload/re-entry.
+
+pnpm --filter @aegis/api exec vitest run src/orchestrator/projections/projections.test.ts --no-file-parallelism --maxWorkers=1
+# ✅ Test Files 1 passed (1) · Tests 9 passed (9) — cold-start order/payment interleaving has no deadlock.
+
+pnpm --filter @aegis/api exec vitest run test/chaos.integration.test.ts src/worker/process-event.test.ts --no-file-parallelism --maxWorkers=1
+# ✅ request persistence/production gate and worker re-entry tests passed (5 + 2 tests); invalid values never enable chaos.
+
+pnpm typecheck && pnpm test && pnpm lint                         # x3, serially
+# ✅ run 1: typecheck 3 projects; shared 5 files / 47 tests; API 31 files / 160 tests; lint 3 projects.
+# ✅ run 2: typecheck 3 projects; shared 5 files / 47 tests; API 31 files / 160 tests; lint 3 projects.
+# ✅ run 3: typecheck 3 projects; shared 5 files / 47 tests; API 31 files / 160 tests; lint 3 projects.
+curl -N localhost:4000/api/v1/stream         # `: ping` heartbeat every 15s; committed events appear when sim runs
 ```
 
-## T9–T12 — modules (acceptance, pending)
+## T9 — CheckoutRecovery (acceptance, green 2026-09-05)
+
+```bash
+pnpm --filter @aegis/api exec vitest run src/modules/checkout-recovery/index.test.ts src/modules/checkout-recovery/templates.test.ts src/modules/checkout-recovery/links.test.ts --no-file-parallelism --maxWorkers=1
+# ✅ Test Files 3 passed (3) · Tests 9 passed (9): locale/template selection (including Hindi), deterministic daily
+#    retry links, masked WhatsApp payload schema, positive-amount/strategy/opt-out guards, and payment idempotency.
+# ✅ The three serial full gates recorded in §T8 also passed (API 31 files / 160 tests; shared 5 files / 47 tests).
+```
+
+## T10–T12 — modules (acceptance, pending)
 
 ```bash
 pnpm --filter @aegis/api test -- modules

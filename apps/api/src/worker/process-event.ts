@@ -4,7 +4,8 @@ import {
 } from '@aegis/shared';
 import { withTransaction } from '../db/tx';
 import { applyProjection } from '../orchestrator/projections';
-import type { JobHandler } from './registry';
+import { runWithLlmChaos } from '../llm/resilient';
+import type { JobHandler, JobHandlerContext, JobRow } from './registry';
 
 interface WebhookEventRow {
   event_id: string;
@@ -36,13 +37,42 @@ function createdAt(value: RazorpayWebhook['created_at']): Date | null {
 }
 
 /**
+ * Read the exact chaos mode persisted by development/test ingress.
+ * Intent: the worker accepts only the one bounded mode understood by the resilient LLM client; arbitrary job payload
+ * values must never become an implicit control channel.
+ * Flow: inspect the JSON payload -> accept the literal `llm_down` -> leave every other value unset.
+ */
+export function chaosFromJobPayload(payload: Record<string, unknown>): 'llm_down' | undefined {
+  return payload.chaos === 'llm_down' ? 'llm_down' : undefined;
+}
+
+/**
+ * Re-enter the request-scoped chaos context for work that may call the diagnostician.
+ * Intent: AsyncLocalStorage context does not cross the durable queue boundary, so the worker must explicitly restore the
+ * ingress decision before invoking the orchestrator/LLM path (B-009).
+ * Flow: read the validated job field -> install `runWithLlmChaos` context -> run the handler body -> restore context.
+ */
+export function runProcessEventWithChaos<T>(job: Pick<JobRow, 'payload'>, callback: () => T): T {
+  return runWithLlmChaos(chaosFromJobPayload(job.payload), callback);
+}
+
+export const processEventHandler: JobHandler = async (job, ctx) => runProcessEventWithChaos(job, () => processEvent(job, ctx));
+
+/**
  * Process one durable webhook event and its projection in one transaction.
  * Intent: the worker must authenticate from the persisted ingress row again; a queued job is not proof of a valid signature.
  * Flow: lock and re-read event -> reject signature-invalid rows before parsing/projecting -> parse raw JSONB -> project under
  *       entity locks -> mark the event processed. A projection failure rolls the event status back for retry.
  */
-export const processEventHandler: JobHandler = async (job, ctx) => {
+async function processEvent(job: JobRow, ctx: JobHandlerContext): Promise<void> {
   const eventId = eventIdFromJob(job.payload);
+  if (ctx.orchestrator) {
+    // Intent: projection and diagnosis belong to the orchestrator once the app is fully wired; keep the legacy branch
+    // available for projection-focused tests and migration tooling that deliberately omit an orchestrator.
+    // Flow: worker restores chaos context -> orchestrator locks/project commits -> diagnosis and actions run post-commit.
+    await ctx.orchestrator.handle(eventId, ctx.workerId);
+    return;
+  }
   await withTransaction(ctx.db, async (tx) => {
     const result = await tx.query<WebhookEventRow>(
       `SELECT event_id, event_type, payload, signature_valid, rzp_created_at, status

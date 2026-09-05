@@ -150,7 +150,7 @@ export class CheckoutRecovery implements ActionModule {
     return guardCheckoutRecovery(proposal, ctx);
   }
 
-  async execute(action: ActionRow, ctx: EventContext, _deps: ExecutionDeps): Promise<ExecutionResult> {
+  async execute(action: ActionRow, _ctx: EventContext, _deps: ExecutionDeps): Promise<ExecutionResult> {
     const payload = actionPayload(action);
     const link = buttonLink(payload);
     return {
@@ -159,7 +159,7 @@ export class CheckoutRecovery implements ActionModule {
       outbound: {
         channel: 'whatsapp',
         recipientMasked: maskedRecipient(payload.to),
-        locale: localeForTemplates(ctx.entity.customer?.locale),
+        locale: localeFromLanguageCode(payload.template.language.code),
         template: payload.template.name,
         payload,
         status: 'simulated_sent',

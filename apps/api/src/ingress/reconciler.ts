@@ -18,6 +18,8 @@ export interface ReconcileInput {
   rzpCreatedAt: Date | null;
   status?: WebhookStatus;
   lastError?: string;
+  /** Development-only LLM chaos mode captured by ingress and carried to the worker. */
+  chaos?: 'llm_down';
 }
 
 export interface ReconcileResult {
@@ -50,7 +52,9 @@ export async function reconcile(db: pg.Pool, input: ReconcileInput): Promise<Rec
     if (event.inserted && input.signatureValid && status !== 'ignored' && isKnownEventType(input.eventType)) {
       const job = await enqueue(client, {
         kind: 'process_event',
-        payload: { eventId: input.eventId },
+        payload: input.chaos === 'llm_down'
+          ? { eventId: input.eventId, chaos: input.chaos }
+          : { eventId: input.eventId },
         dedupeKey: `process_event:${input.eventId}`,
       });
       enqueued = job.inserted;

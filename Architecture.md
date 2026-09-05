@@ -53,7 +53,7 @@ Everything that moves money is **deterministic code**. The LLM is used only wher
 │  X402 src/x402/  402 challenge · X-PAYMENT verify · nonce replay guard · caps · ledger           │
 │  NLQ  src/nlq/   schema doc → LLM SQL → AST validator → read-only role → forecast (math in TS)  │
 │  COMPLIANCE src/compliance/  keyword pre-screen → LLM rubric → evidence-span check              │
-│  BUS  src/bus/   in-process EventEmitter → GET /api/v1/stream (SSE)                             │
+│  BUS  src/bus/   in-process EventBus subscriber set → GET /api/v1/stream (SSE)                  │
 └───────────────────────────────┬──────────────────────────────┬──────────────────────────────────┘
                                 │ SQL (pg)                     │ SSE + JSON
                                 ▼                              ▼
@@ -286,7 +286,9 @@ Next.js 16 App Router, Tailwind 4, `next-themes` (system default + manual toggle
 | Task 2 — migrations + core schema + seed | **done by Codex, verified by Claude** (see `Checklist.md` T2, `TestChecklist.md` §T2) |
 | Task 3 — idempotent webhook ingress | **done by Codex, verified by Claude** (see `Checklist.md` T3, `TestChecklist.md` §T3, B-004/D-031) |
 | Task 4 — worker + precedence-guarded projections | **done by Codex, verified by Claude** (see `Checklist.md` T4, `TestChecklist.md` §T4, F-006/D-032–D-035, B-006) |
-| Task 5 — webhook simulator CLI | **done by Codex, verified by Claude** (see `Checklist.md` T5, `TestChecklist.md` §T5, F-007, D-036–D-043, DV-006; the new `--contend` burst found B-007, an open T4 lock-order defect) |
-| Task 6 — provider-agnostic LLM client + resilience | **done by Codex, verified by Claude** (see `Checklist.md` T6, `TestChecklist.md` §T6, F-008, D-044/D-045; Anthropic and OpenAI are SDK-mocked — no live model output is claimed; B-008 fixed, B-009 open for T7) |
-| Task 7 — diagnostician (hints → LLM → cross-check → fallback) | **done by Codex, verified by Claude** (see `Checklist.md` T7, `TestChecklist.md` §T7, F-009, D-045–D-047; C-A6 proved by an ordering test, C-A7 re-proved on a real projection row, which found B-010; B-009 still open and now owned by T8) |
+| Task 5 — webhook simulator CLI | **done by Codex, verified by Claude** (see `Checklist.md` T5, `TestChecklist.md` §T5, F-007, D-036–D-043, DV-006; its `--contend` burst found B-007, which is fixed by the order-slot reservation in D-048) |
+| Task 6 — provider-agnostic LLM client + resilience | **done by Codex, verified by Claude** (see `Checklist.md` T6, `TestChecklist.md` §T6, F-008, D-044/D-045; Anthropic and OpenAI are SDK-mocked — no live model output is claimed; B-008 fixed, B-009 fixed in T8) |
+| Task 7 — diagnostician (hints → LLM → cross-check → fallback) | **done by Codex, verified by Claude** (see `Checklist.md` T7, `TestChecklist.md` §T7, F-009, D-045–D-047; C-A6 proved by an ordering test, C-A7 re-proved on a real projection row, which found B-010; B-009 transport fixed in T8) |
+| Task 8 — EventOrchestrator, action audit, and SSE bus | **implemented and green by Codex** (see `Checklist.md` T8, `TestChecklist.md` §T8, F-010, D-049–D-050; deterministic routing/guardrails, prior-failure query, action idempotency, worker chaos propagation, and SSE framing are in place) |
+| Task 9 — CheckoutRecovery module | **implemented and green by Codex** (see `Checklist.md` T9, `TestChecklist.md` §T9, F-011; deterministic payment retry links, localized templates, masked WhatsApp payloads, and pure guards are in place) |
 | Everything else | planned; see `Checklist.md` and the Status column in `Bug-Feature.md` |

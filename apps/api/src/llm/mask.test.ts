@@ -12,6 +12,11 @@ describe('PII masking', () => {
     expect(maskContact('+14155551234')).toBe('+1••••••1234');
   });
 
+  it('fully masks contacts that are too short to expose a safe suffix', () => {
+    expect(maskContact('1234')).toBe('••••');
+    expect(maskContact('+1234')).toBe('+1•••');
+  });
+
   it('deep-copies and masks nested known fields without mutating the input', () => {
     const source = { customer: { name: 'Alice Example', email: 'alice@example.com', contact: '+919876543210' }, untouched: 3 };
     const masked = maskPii(source) as { customer: { name: string; email: string; contact: string }; untouched: number };

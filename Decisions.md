@@ -42,6 +42,9 @@
 | D-035 | 2026-09-05 | Projections take rows in one global lock order (entity row, then toward the FK root) so no two projections can deadlock | accepted |
 | D-046 | 2026-09-05 | Unapplied diagnosis snapshots are returned as non-persisted deterministic results | accepted |
 | D-047 | 2026-09-05 | Pin the API Vitest command to `--no-file-parallelism --maxWorkers=1` for the shared PostgreSQL test database | accepted |
+| D-048 | 2026-09-05 | Reserve absent order identities with a NULL-customer placeholder before customer upserts | accepted |
+| D-049 | 2026-09-05 | Serialize action execution with a session advisory lock while keeping module code outside row-lock transactions | accepted |
+| D-050 | 2026-09-05 | Carry development LLM chaos explicitly on `process_event` jobs and restore it in the worker | accepted |
 
 ---
 
@@ -187,7 +190,7 @@
 ### D-035 · One global lock order for projections
 **Context.** Task 4 verification found a real ABBA deadlock (B-006). `projectOrder` locked `orders` and then upserted `customers`; `projectPayment` upserted `customers` and then locked `orders`. Two workers handling `order.paid` and `payment.captured` for the same order and customer — a pair Razorpay delivers together — could each hold the row the other wanted, and PostgreSQL aborted one with `40P01`.
 **Options.** (a) leave it: the aborted job retries after the backoff and eventually succeeds; (b) wrap projections in a serializable transaction or a table-level lock; (c) give every projection the same lock order.
-**Choice.** (c). Each projection locks its own entity row first (that row is what the precedence guard reads), then walks *toward* the foreign-key root: `disputes → payments → orders → customers`, with `subscriptions` and `invoices` directly above `customers`. `projectPayment` therefore takes the `orders` row before upserting `customers`; because `orders.customer_id` is itself a foreign key, the *creation* of a missing order still happens after the customer upsert (`lockOrder` / `createOrder` in `apps/api/src/orchestrator/projections/payments.ts`).
+**Choice.** (c). Each projection locks its own entity row first (that row is what the precedence guard reads), then walks *toward* the foreign-key root: `disputes → payments → orders → customers`, with `subscriptions` and `invoices` directly above `customers`. `projectPayment` and `projectOrder` call `lockOrderSlot` before upserting `customers`; an absent order is reserved by a NULL-customer placeholder, then filled after the customer upsert. This preserves the FK requirement without reopening the cold-start gap (B-007).
 **Consequences.** No pair of projections can form a lock cycle, so throughput does not depend on the retry path masking deadlocks. (a) was rejected because a deadlock costs a full backoff interval per collision, is invisible in the job's final state, and grows with `WORKER_CONCURRENCY`; (b) was rejected because it serialises unrelated entities. `C-C3` now states the order, so T8's orchestrator and the T10/T11 modules must extend it rather than invent their own.
 
 ### D-036 · Canonical simulator builders and package wiring
@@ -251,3 +254,26 @@
 **Context.** Vitest 5 still interleaved database-owning files under the package command even with `fileParallelism=false` and worker limits in `vitest.config.ts`; migration rollback in the schema suite could remove `jobs` while worker tests were running.
 **Choice.** Put `--no-file-parallelism --maxWorkers=1` directly in `apps/api/package.json`'s `test` script, retaining the config limits as defense in depth.
 **Consequences.** Root `pnpm test` is deterministic for the shared `aegis_test` database at the cost of serial file startup. The three consecutive Task 7 gates use this command and all pass.
+
+### D-048 · Reserve absent order identities before customer upserts
+**Context.** `SELECT ... FOR UPDATE` does not lock a row that is absent. During a cold-start delivery, `projectPayment` could therefore upsert `customers` before its `orders` parent was reserved, while a concurrent `projectOrder` held an uncommitted order row and waited for that customer (B-007).
+**Options.** (a) rely on the worker retry after PostgreSQL aborts one transaction; (b) take an advisory lock for every order id; (c) insert a NULL-customer placeholder into `orders` before either projection touches `customers`.
+**Choice.** (c). `lockOrderSlot` serializes existing rows and first sightings through the same `orders` row lock. The order projection fills a placeholder in place so a first event remains version 1; the payment projection links its customer before inserting the payment FK.
+**Consequences.** The C-C3 order remains entity -> order -> customer, including when the parent did not previously exist. The cold-start interleaving regression test now completes both transactions without an ABBA cycle, while unrelated order ids continue in parallel.
+
+### D-049 · Serialize action execution without holding row locks over module code
+**Context.** `executeAction` must prevent two workers from invoking a side-effecting module for the same unique action, but C-A6 forbids holding a `SELECT ... FOR UPDATE` transaction while module code could call an LLM.
+**Options.** (a) rely on the unique action row and let concurrent modules race; (b) add a long-lived `executing` status/claim column and lease recovery; (c) hold a PostgreSQL session advisory lock keyed by the action id while two short row-lock transactions bracket the unlocked module call.
+**Choice.** (c). `execute.ts` pins one pool client, acquires `pg_advisory_lock(hashtextextended(...))`, commits the initial approval check before `module.execute`, then locks/persists the result in a second transaction and releases the session lock. A crashed process releases the session lock when PostgreSQL closes the connection, and the existing action idempotency key remains the durable uniqueness boundary.
+**Consequences.** Separate worker processes cannot invoke one action concurrently, no LLM-capable module runs inside a row-lock transaction, and no schema migration is needed. The two-pool integration regression proves the module call occurs once.
+
+### D-050 · Carry development LLM chaos across the durable worker boundary
+**Context.** `AsyncLocalStorage` only follows the ingress request context. A `process_event` job is consumed later by a worker loop, so a development `x-aegis-chaos: llm_down` header would otherwise disappear before diagnosis.
+**Options.** (a) rely on request-local storage (does not cross the queue); (b) persist arbitrary header values (creates an unbounded control channel); (c) persist the single validated `llm_down` literal on the job in development/test and restore it immediately around the worker's orchestrator call.
+**Choice.** (c). Ingress keeps the `NODE_ENV` gate, `reconcile` writes `{ eventId, chaos: 'llm_down' }` only for that mode, and `processEventHandler` accepts only that literal before calling `runWithLlmChaos` (B-009).
+**Consequences.** Chaos drills reach worker-side LLM calls deterministically while production jobs carry no chaos field. The bounded restore happens outside the projection transaction, preserving C-A6 and preventing arbitrary job payload data from controlling the LLM client.
+
+### D-051 · Resume approved actions after a worker crash
+**Context.** A worker can commit an auto-approved action row and then exit before `executeAction`. Retrying the same `process_event` projects the duplicate as `entity.applied=false`; simply skipping that projection would leave the approved action orphaned forever.
+**Choice.** On an unapplied retry, query only `actions` for the trigger event with `status='approved'` and resume them through the same advisory-locked `executeAction` path. Idempotency conflicts in an applied retry use the same lookup; blocked, pending, executed, and failed rows remain no-ops.
+**Consequences.** Recovery executes persisted approved work exactly once without proposing a new action, while D-046 still prevents stale deliveries from spending an LLM call or creating a fresh action. Module code remains outside `SELECT ... FOR UPDATE` transactions.
