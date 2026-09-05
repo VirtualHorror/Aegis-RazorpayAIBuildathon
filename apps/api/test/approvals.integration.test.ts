@@ -230,4 +230,32 @@ integration('T13 approvals and attribution', () => {
       await app.close();
     }
   });
+
+  it('lists actions with the provider and degraded flag of their diagnosis', async () => {
+    await seedPayment(pool, 'pay_list', 'cus_list', 'ord_list');
+    await seedTriggerEvent(pool, 'evt_list');
+    const diagnosis = await pool.query<{ id: string }>(
+      `INSERT INTO diagnoses (event_id, entity_type, entity_id, hints, provider, model, prompt_version, input_digest, output, root_cause, confidence, strategy, rationale, degraded, degraded_reason)
+       VALUES ('evt_list', 'payment', 'pay_list', '{}'::jsonb, 'fallback', 'rules-v1', 'v1', 'digest', '{}'::jsonb, 'UNKNOWN', 0.5, 'ESCALATE_HUMAN', 'r', true, 'circuit_open') RETURNING id`,
+    );
+    const proposal: ActionProposal = {
+      module: 'checkout_recovery', moduleVersion: 'v1', idempotencyKey: 'checkout_recovery:payment:pay_list:1', entityType: 'payment', entityId: 'pay_list', customerId: 'cus_list',
+      kind: 'retry_link', summary: 'list test', moneyImpactPaise: 0, expectedRecoveryPaise: 1200, requiresApproval: false, payload: {}, explanation: ['test'],
+    };
+    await insertAction(pool, { proposal, triggerEventId: 'evt_list', diagnosisId: diagnosis.rows[0]!.id, bounds: [], status: 'blocked', reason: 'quiet_hours_local' });
+    const orchestrator = new EventOrchestrator({ db: pool, llm: new StubLlmClient(), modules: [], now: () => now, logger });
+    const config = loadConfig({ DATABASE_URL: databaseUrl!, RAZORPAY_WEBHOOK_SECRET: 'test_webhook_secret_16', NODE_ENV: 'test' });
+    const app = await buildApp({ config, db: pool, probeDb: async () => ({ ok: true, latencyMs: 1 }), orchestrator, llm: new StubLlmClient(), logger: false });
+    try {
+      const all = await app.inject({ method: 'GET', url: '/api/v1/actions' });
+      expect(all.statusCode).toBe(200);
+      const items = (all.json() as { items: { module: string; status: string; diagnosis_degraded: boolean | null; diagnosis_provider: string | null }[] }).items;
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({ module: 'checkout_recovery', status: 'blocked', diagnosis_degraded: true, diagnosis_provider: 'fallback' });
+      const filtered = await app.inject({ method: 'GET', url: '/api/v1/actions?status=executed&module=checkout_recovery' });
+      expect((filtered.json() as { items: unknown[] }).items).toHaveLength(0);
+    } finally {
+      await app.close();
+    }
+  });
 });

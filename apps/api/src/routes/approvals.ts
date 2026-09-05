@@ -76,11 +76,19 @@ export const approvalRoutes: FastifyPluginAsync<ApprovalRouteOptions> = async (a
     const query = ListQuery.parse(request.query ?? {});
     const values: unknown[] = [];
     const predicates: string[] = [];
-    if (query.status) { values.push(query.status); predicates.push(`status = $${values.length}`); }
-    if (query.module) { values.push(query.module); predicates.push(`module = $${values.length}`); }
-    if (query.before) { values.push(query.before); predicates.push(`created_at < $${values.length}`); }
+    if (query.status) { values.push(query.status); predicates.push(`a.status = $${values.length}`); }
+    if (query.module) { values.push(query.module); predicates.push(`a.module = $${values.length}`); }
+    if (query.before) { values.push(query.before); predicates.push(`a.created_at < $${values.length}`); }
     values.push(query.limit);
-    const result = await options.db.query(`SELECT id, idempotency_key, module, module_version, trigger_event_id, diagnosis_id, entity_type, entity_id, customer_id, kind, summary, proposal, bounds, money_impact_paise, expected_recovery_paise, requires_approval, status, reason, decided_by, decided_at, executed_at, result, created_at, updated_at FROM actions ${predicates.length > 0 ? `WHERE ${predicates.join(' AND ')}` : ''} ORDER BY created_at DESC, id DESC LIMIT $${values.length}`, values);
+    // Intent: the audit table shows whether an action's diagnosis came from the model or the rule-based fallback
+    //         without one detail request per row; the join is read-only and additive to the row shape.
+    const result = await options.db.query(
+      `SELECT a.id, a.idempotency_key, a.module, a.module_version, a.trigger_event_id, a.diagnosis_id, a.entity_type, a.entity_id, a.customer_id, a.kind, a.summary, a.proposal, a.bounds, a.money_impact_paise, a.expected_recovery_paise, a.requires_approval, a.status, a.reason, a.decided_by, a.decided_at, a.executed_at, a.result, a.created_at, a.updated_at,
+              d.degraded AS diagnosis_degraded, d.provider AS diagnosis_provider
+       FROM actions a LEFT JOIN diagnoses d ON d.id = a.diagnosis_id
+       ${predicates.length > 0 ? `WHERE ${predicates.join(' AND ')}` : ''} ORDER BY a.created_at DESC, a.id DESC LIMIT $${values.length}`,
+      values,
+    );
     return { items: result.rows, next: result.rows.length === query.limit ? cursorOf(result.rows.at(-1)?.created_at) : null };
   });
 

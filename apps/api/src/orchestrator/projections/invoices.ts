@@ -56,8 +56,11 @@ function eventEntityDate(value: number | null | undefined, current: Date | null 
 
 /**
  * Project an invoice with timestamp precedence and an immutable inserted floor.
- * Intent: invoice discounts must fail closed until a later negotiator deliberately computes a floor.
- * Flow: lock row -> reject duplicate/older event -> upsert customer and invoice (floor=amount only on INSERT).
+ * Intent: invoice discounts must fail closed. The merchant's own floor is the only value that may open room for a
+ *         discount, so it is read from the invoice notes (`notes.floor_amount_paise`) and validated as integer paise
+ *         inside [0, amount]; anything missing, malformed or above the amount falls back to floor = amount, which
+ *         leaves the negotiator no discount to give (B-014, D-063).
+ * Flow: lock row -> reject duplicate/older event -> upsert customer and invoice (floor set only on INSERT).
  */
 export async function projectInvoice(
   tx: pg.PoolClient,
@@ -82,6 +85,7 @@ export async function projectInvoice(
   const dueBy = eventEntityDate(entity.due_by, current?.due_by);
   const lineItems = definedOr(entity.line_items, current?.line_items, []);
   const notes = definedOr(entity.notes, current?.notes, {});
+  const floor = merchantFloorPaise(notes, amount);
   const sourceId = sourceEventId(ctx, current?.last_event_id);
   const providerCreatedAt = entityCreatedAt(entity) ?? current?.rzp_created_at ?? null;
 
@@ -89,7 +93,7 @@ export async function projectInvoice(
     `INSERT INTO invoices
        (id, customer_id, amount_paise, floor_amount_paise, currency, status, due_by, line_items, negotiation_state,
         negotiation_round, current_offer_paise, notes, rzp_created_at, last_event_id, last_event_at, version)
-     VALUES ($1, $2, $3, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11::jsonb, $12, $13, $14, 1)
+     VALUES ($1, $2, $3, $15, $4, $5, $6, $7::jsonb, $8, $9, $10, $11::jsonb, $12, $13, $14, 1)
      ON CONFLICT (id) DO UPDATE SET
        customer_id = EXCLUDED.customer_id,
        amount_paise = EXCLUDED.amount_paise,
@@ -124,6 +128,7 @@ export async function projectInvoice(
       providerCreatedAt,
       sourceId,
       incomingAt,
+      floor,
     ],
   );
   // Intent: a stale invoice conflict must not overwrite a negotiated or paid state during concurrent delivery.
@@ -132,6 +137,20 @@ export async function projectInvoice(
   if (!row) throw new Error(`invoice projection returned no row for ${entity.id}`);
   const applied = result.rows.length === 1;
   return snapshot('invoice', row, customer ?? await loadCustomer(tx, row.customer_id), applied);
+}
+
+/**
+ * The merchant's negotiating floor for this invoice, in integer paise.
+ * Intent: money bounds are never inferred and never authored by a model (C-A1); the merchant states the floor on the
+ *         invoice and anything unusable falls back to the full amount, which permits no discount at all.
+ * Flow: read `notes.floor_amount_paise` -> require a safe non-negative integer no greater than the amount -> else amount.
+ */
+export function merchantFloorPaise(notes: unknown, amountPaise: number): number {
+  if (typeof notes !== 'object' || notes === null || Array.isArray(notes)) return amountPaise;
+  const raw = (notes as Record<string, unknown>).floor_amount_paise;
+  const value = typeof raw === 'number' ? raw : typeof raw === 'string' && raw.trim() !== '' ? Number(raw) : Number.NaN;
+  if (!Number.isSafeInteger(value) || value < 0 || value > amountPaise) return amountPaise;
+  return value;
 }
 
 export const applyInvoiceProjection = projectInvoice;

@@ -1,15 +1,18 @@
 import type { Metadata } from "next";
-import { EmptyState } from "@/components/ui/EmptyState";
+import { ApprovalQueue } from "@/components/approvals/ApprovalQueue";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { api, describeFailure } from "@/lib/api";
 
 export const metadata: Metadata = { title: "Approvals" };
+export const dynamic = "force-dynamic";
 
-/** Placeholder route (Task 17 step 17.6); the real page lands in Task 19. */
-export default function Page() {
+/** Humans decide (Checklist 19.3): pending actions and evidence packets, each with the deterministic facts beside it. */
+export default async function ApprovalsPage() {
+  const result = await api.approvals();
   return (
     <>
-      <PageHeader title="Approvals" description="Actions and evidence packets waiting for a human decision." />
-      <EmptyState title="Not built yet" body="The approval queues arrive with Task 19." />
+      <PageHeader title="Approvals" description="Money above the auto-approve limit and every chargeback evidence packet stop here until a person decides." />
+      <ApprovalQueue initialActions={result.ok ? result.data.actions : []} initialEvidence={result.ok ? result.data.evidence : []} error={result.ok ? null : describeFailure(result)} />
     </>
   );
 }

@@ -6,7 +6,7 @@ const DOT: Record<StreamStatus, string> = { connecting: "bg-fg-muted", live: "bg
 /** Live-stream connection state: green when the SSE socket is open, amber while backing off. */
 export function StreamPill({ status }: { status: StreamStatus }) {
   return (
-    <span className="inline-flex h-7 items-center gap-1.5 rounded-full border border-border px-2 text-[11px] text-fg-muted" title={`Live updates: ${LABEL[status].toLowerCase()}`}>
+    <span className="inline-flex h-7 shrink-0 items-center whitespace-nowrap gap-1.5 rounded-full border border-border px-2 text-[11px] text-fg-muted" title={`Live updates: ${LABEL[status].toLowerCase()}`}>
       <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${DOT[status]}`} />
       <span className="sr-only md:not-sr-only">{LABEL[status]}</span>
     </span>

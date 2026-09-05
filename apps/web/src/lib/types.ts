@@ -110,6 +110,12 @@ export interface ActionRow {
   updated_at: string;
 }
 
+/** `GET /api/v1/actions` rows carry the diagnosis provider so the audit table can show a degraded badge without N+1 fetches. */
+export interface ActionListRow extends ActionRow {
+  diagnosis_degraded: boolean | null;
+  diagnosis_provider: string | null;
+}
+
 export interface DiagnosisRow {
   id: string;
   event_id: string;

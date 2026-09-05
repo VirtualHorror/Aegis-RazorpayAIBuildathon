@@ -6,6 +6,7 @@ import { MIGRATIONS_DIR, REPO_ROOT_ENV } from '../../db/paths';
 import { migrateUp } from '../../db/migrate';
 import { withTransaction } from '../../db/tx';
 import { applyProjection, projectOrder, projectPayment } from './index';
+import { merchantFloorPaise } from './invoices';
 
 loadDotenv({ path: REPO_ROOT_ENV, quiet: true });
 
@@ -294,3 +295,20 @@ integration('entity projections', () => {
     )).rows[0]).toMatchObject({ status: 'captured', order_id: 'order_cold_start_lock', version: 1, last_event_id: 'evt_cold_start_payment' });
   }, 20_000);
 });
+
+describe('merchant negotiating floor (B-014)', () => {
+  it('accepts a stated floor inside the invoice amount and falls back to the amount otherwise', () => {
+    expect(merchantFloorPaise({ segment: 'b2b', floor_amount_paise: 35_700_000 }, 42_000_000)).toBe(35_700_000);
+    expect(merchantFloorPaise({ floor_amount_paise: '35700000' }, 42_000_000)).toBe(35_700_000);
+    expect(merchantFloorPaise({ floor_amount_paise: 0 }, 42_000_000)).toBe(0);
+    // Anything unusable must leave no discount room at all.
+    expect(merchantFloorPaise({}, 42_000_000)).toBe(42_000_000);
+    expect(merchantFloorPaise({ floor_amount_paise: 42_000_001 }, 42_000_000)).toBe(42_000_000);
+    expect(merchantFloorPaise({ floor_amount_paise: -1 }, 42_000_000)).toBe(42_000_000);
+    expect(merchantFloorPaise({ floor_amount_paise: 1.5 }, 42_000_000)).toBe(42_000_000);
+    expect(merchantFloorPaise({ floor_amount_paise: 'many' }, 42_000_000)).toBe(42_000_000);
+    expect(merchantFloorPaise(null, 42_000_000)).toBe(42_000_000);
+    expect(merchantFloorPaise([1, 2], 42_000_000)).toBe(42_000_000);
+  });
+});
+

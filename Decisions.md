@@ -338,3 +338,15 @@ The x402 buyer lives under `scripts/`, while its TypeScript runner is installed 
 **Choice.** Claude implements the six tasks in order, one commit and one `task-NN-done` tag per task, with the same verification bar Codex was held to (`pnpm typecheck && pnpm test && pnpm lint`, Chrome checks recorded in `TestChecklist.md`). Design decisions follow `Design.md` exactly where it pins an axis; where it leaves one free, the choice and its reason are recorded in `Design.md` "Status" so a reviewer can diff intent against implementation.
 **Consequences.** The Verification Agent and the implementer are the same model for this sprint; the compensating control is that every claim in `Bug-Feature.md` cites a command or a Chrome observation, never "it works".
 
+### D-063 · The merchant states the invoice floor; everything else fails closed (2026-09-06)
+
+**Context.** `projectInvoice` set `floor_amount_paise = amount_paise` on insert, which is the right default (Razorpay has no floor concept and a discount must fail closed) but left no invoice in the system with negotiating room, so `B2BNegotiator` could only ever offer the full amount (B-014).
+**Options.** (a) derive a floor from the amount (a margin the system invents — a money value with no source, against C-A1); (b) add a settings screen and a column for it (new schema, no source of truth per invoice); (c) read it from the invoice's own `notes.floor_amount_paise`, where a merchant would put it, and keep the fail-closed default.
+**Choice.** (c). `merchantFloorPaise` validates the note as a safe non-negative integer no greater than the amount; anything missing, fractional, negative, over the amount or non-numeric falls back to the amount. The floor is still written only on INSERT, so no later event can move it.
+**Consequences.** The negotiator can be demonstrated with a real bounded discount (₹3,57,000 floor on a ₹4,20,000 invoice → a 5 % round-one offer of ₹3,99,000 that needs human approval), and a merchant who states no floor still gets zero automated discount. No migration; `floor_amount_paise` already existed.
+
+### D-064 · The dashboard records who decided (2026-09-06)
+
+**Context.** `POST /api/v1/actions/:id/decision` requires an `actor`, which becomes `decided_by` and the `audit_log` actor (C-B2). A dashboard with no accounts still has to answer "who approved this".
+**Choice.** `lib/actor.ts` keeps a name in `localStorage` under `aegis.actor`, defaulting to `human:dashboard`, editable on the approvals page. It is a label, not authentication, and the UI says so ("recorded in the audit log with every decision").
+**Consequences.** Decisions are attributable and honest about their provenance. Real authentication is out of scope for this build and is listed in `Bug-Feature.md` rather than faked.

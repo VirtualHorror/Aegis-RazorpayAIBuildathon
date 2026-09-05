@@ -681,6 +681,28 @@ Chrome (1478px window; 360px via same-origin iframe):
 
 Found and fixed: relative times could read "in the future" because the shared 10 s clock lagged a fresh event (now "just now" for skews under a minute); the listening panel text was unreadable over the dots (gradient scrim); B-012 and B-013 above; `Date.now()` during render (React purity rule) replaced by `useNow()`.
 
+### T19 — actions + approvals (observed 2026-09-06, Claude)
+
+```text
+$ pnpm --filter @aegis/web test
+ Test Files  6 passed (6)      Tests  27 passed (27)          # + lib/actions.test.ts
+$ pnpm --filter @aegis/api exec vitest run src/orchestrator/projections/projections.test.ts src/modules/b2b-negotiator --no-file-parallelism --maxWorkers=1
+ Test Files  4 passed (4)      Tests  17 passed (17)          # + merchantFloorPaise (B-014)
+$ curl -s localhost:4000/api/v1/approvals | jq '{actions: (.actions|length), evidence: (.evidence|length)}'
+{"actions": 1, "evidence": 3}
+$ curl -s 'localhost:4000/api/v1/actions?limit=1' | jq '.items[0] | {module, status, diagnosis_provider, diagnosis_degraded}'
+{"module": "b2b_negotiator", "status": "pending_approval", "diagnosis_provider": null, "diagnosis_degraded": null}
+```
+
+Chrome (768px window plus a 1440px same-origin iframe for the desktop layout):
+
+- `/actions`: 24 rows, module colour rails, status pills, ₹ impact and expected recovery, and a diagnosis column reading `openai`, `degraded` or `rules only` per row. Status and module selects drive the URL; the compact glow search narrows loaded rows.
+- Action drawer and `/actions/[id]`: proposal facts, numbered explanation, `BoundsChecklist` with all eight rules (limit versus actual, notes, e.g. "Strategy allowed limit \[RETRY_LINK_LOCALIZED, …\] actual RETRY_LINK_LOCALIZED"), `DiagnosisCard` (root cause "Three ds auth failed", strategy, confidence bar, provider `openai gpt-5.6-luna`, cross-check "agreed"), the exact WhatsApp template JSON with a copy button under a SIMULATED watermark, and a timeline from `audit_log` and the ledger.
+- `/approvals`: the ₹3,99,000 offer beside its ten passed rules; typing a note and pressing Approve → `200`, toast "Approved · Offer ₹3,99,000.00 to settle invoice inv_0001_6e7a6a37 — now executed. Recorded as human:dashboard", row leaves the queue. Three evidence packets render their deterministic sections with the AI narrative in a labelled box and the missing list in red.
+- Empty note is refused client-side ("Write at least three characters"); both buttons lock while a decision is in flight; a `409` restores the row and shows "Someone else decided this action first".
+
+Found and fixed: B-014 (no invoice could ever be negotiated); guardrail values with long JSON overlapped their neighbour column (each column now wraps in its own track); top-bar pills wrapped at ~768px (pills are `shrink-0 whitespace-nowrap`, env pill hides below `xl`); the trigger-event id linked to an empty filter URL (now a copyable id).
+
 ## T23–T24 — demo + hardening (acceptance, pending)
 
 ```bash

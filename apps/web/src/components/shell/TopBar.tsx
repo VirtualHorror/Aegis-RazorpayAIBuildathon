@@ -26,14 +26,14 @@ export function TopBar() {
         <Logo />
         <span className="text-[15px] font-semibold tracking-tight">Aegis</span>
       </Link>
-      <div className="hidden min-w-0 truncate text-sm text-fg-muted sm:block" aria-hidden>
+      <div className="hidden min-w-0 flex-1 truncate text-sm text-fg-muted sm:block" aria-hidden>
         {title}
       </div>
-      <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-        <span className="hidden md:inline-flex">
+      <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
+        <span className="hidden xl:inline-flex">
           <EnvPill system={status.system} />
         </span>
-        <span className="hidden md:inline-flex">
+        <span className="hidden lg:inline-flex">
           <LlmPill system={status.system} apiState={status.api} />
         </span>
         <KillSwitchPill enabled={status.killSwitch} />

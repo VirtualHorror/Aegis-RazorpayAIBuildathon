@@ -8,6 +8,7 @@
  */
 import type {
   ActionDetail,
+  ActionListRow,
   ActionRow,
   ApiErrorBody,
   ApprovalsResponse,
@@ -130,7 +131,7 @@ export const api = {
     apiFetch<Paged<WebhookEventListRow>>(`/api/v1/events${query(params)}`),
   event: (eventId: string) => apiFetch<WebhookEventDetail>(`/api/v1/events/${encodeURIComponent(eventId)}`),
   actions: (params: { status?: string; module?: string; limit?: number; before?: string } = {}) =>
-    apiFetch<Paged<ActionRow>>(`/api/v1/actions${query(params)}`),
+    apiFetch<Paged<ActionListRow>>(`/api/v1/actions${query(params)}`),
   action: (id: string) => apiFetch<ActionDetail>(`/api/v1/actions/${encodeURIComponent(id)}`),
   approvals: () => apiFetch<ApprovalsResponse>("/api/v1/approvals"),
   decideAction: (id: string, body: DecisionBody) =>

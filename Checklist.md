@@ -677,15 +677,15 @@ All arithmetic in integer paise with `Math.ceil` toward the merchant; unit tests
 
 ---
 
-### Task 19: Actions audit trail + Approvals pages
+### Task 19: Actions audit trail + Approvals pages — **DONE by Claude (2026-09-06)**
 
 **Files.** `app/actions/page.tsx`, `app/actions/[id]/page.tsx`, `app/approvals/page.tsx`, `components/actions/{ActionTable,ActionDrawer,BoundsChecklist,DiagnosisCard,OutboundPayload,Timeline,ModuleBadge}.tsx`, `components/approvals/{ApprovalQueue,ApprovalCard,EvidencePacketView,DecisionForm}.tsx`.
 
 **Steps.**
-- [ ] 19.1 Actions list with filters (status, module), status pills coloured per `Design.md`, money impact and expected recovery in ₹ (`formatInr`), degraded badge when the diagnosis was rule-based.
-- [ ] 19.2 Action detail: `BoundsChecklist` renders every `GuardRule` (✓/✗, rule, limit vs actual, note); `DiagnosisCard` (root cause, confidence bar, strategy, rationale, cross-check notes, provider/model); `OutboundPayload` shows the exact JSON with copy + "simulated" watermark; `Timeline` from `audit_log` + timestamps.
-- [ ] 19.3 Approvals: two queues (actions, evidence). `EvidencePacketView` shows each packet section, the `missing` list prominently, and the AI narrative in a clearly labelled "AI-drafted" box; `DecisionForm` requires a note, posts the decision, optimistic update, toast, and disables double-submit (server returns 409 on races — show it).
-- [ ] 19.4 Commit `feat(t19): actions audit trail and approvals`.
+- [x] 19.1 Actions list with filters (status, module), status pills coloured per `Design.md`, money impact and expected recovery in ₹ (`formatInr`), degraded badge when the diagnosis was rule-based.
+- [x] 19.2 Action detail: `BoundsChecklist` renders every `GuardRule` (✓/✗, rule, limit vs actual, note); `DiagnosisCard` (root cause, confidence bar, strategy, rationale, cross-check notes, provider/model); `OutboundPayload` shows the exact JSON with copy + "simulated" watermark; `Timeline` from `audit_log` + timestamps.
+- [x] 19.3 Approvals: two queues (actions, evidence). `EvidencePacketView` shows each packet section, the `missing` list prominently, and the AI narrative in a clearly labelled "AI-drafted" box; `DecisionForm` requires a note, posts the decision, optimistic update, toast, and disables double-submit (server returns 409 on races — show it).
+- [x] 19.4 Commit `feat(t19): actions audit trail and approvals`.
 
 **Verify/Docs.** `Bug-Feature.md` F-021.
 

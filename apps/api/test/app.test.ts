@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import { AEGIS_VERSION } from '@aegis/shared';
 import { buildApp } from '../src/app';
 import { loadConfig } from '../src/config';
 import type { DbProbeResult } from '../src/db/pool';
@@ -35,7 +36,8 @@ describe('GET /api/v1/system', () => {
   it('reports the keyless stub selected by the factory when no provider key is configured', async () => {
     const res = await (await appWithProbe({ ok: true, latencyMs: 1 })).inject({ method: 'GET', url: '/api/v1/system' });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ provider: 'stub', model: 'fixture-v1', modelFast: 'fixture-v1' });
+    // env/version/simulated were added for the dashboard's environment and provider pills (D-060).
+    expect(res.json()).toEqual({ provider: 'stub', model: 'fixture-v1', modelFast: 'fixture-v1', env: 'test', version: AEGIS_VERSION, simulated: true });
   });
 });
 
