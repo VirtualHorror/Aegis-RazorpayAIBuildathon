@@ -35,7 +35,7 @@ export function ThemeToggle() {
             aria-label={option.label}
             title={option.label}
             onClick={() => setTheme(option.value)}
-            className={`flex h-7 items-center gap-1 rounded-full px-2 transition-colors ${active ? "bg-accent text-white" : "text-fg-muted hover:text-fg"}`}
+            className={`flex h-7 items-center gap-1 rounded-full px-2 transition-colors ${active ? "bg-accent text-on-accent" : "text-fg-muted hover:text-fg"}`}
           >
             <Icon name={option.icon} size={14} />
             <span className="hidden sm:inline">{option.label}</span>

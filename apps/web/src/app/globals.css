@@ -17,6 +17,9 @@
   --fg: #0b1020;
   --fg-muted: #5b6478;
   --accent: #2b6cf6;
+  /* Text on an accent fill. White clears 4.5:1 on the light-mode accent but only reaches 3.1:1 on the lighter
+     dark-mode accent, so dark mode flips to near-black (C-F6). */
+  --on-accent: #ffffff;
   --ok: #0f9d58;
   --warn: #d97706;
   --danger: #dc2626;
@@ -35,6 +38,7 @@
   --fg: #e8eaf2;
   --fg-muted: #8b93a7;
   --accent: #5b8dff;
+  --on-accent: #0b1020;
   --ok: #31c48d;
   --warn: #f5a524;
   --danger: #f87171;
@@ -64,6 +68,7 @@
   --color-fg: var(--fg);
   --color-fg-muted: var(--fg-muted);
   --color-accent: var(--accent);
+  --color-on-accent: var(--on-accent);
   --color-ok: var(--ok);
   --color-warn: var(--warn);
   --color-danger: var(--danger);

@@ -11,7 +11,7 @@ import type { ActionRow, MetricsSummary, MetricsWindow } from "@/lib/types";
 import { KpiGrid } from "./KpiGrid";
 import { LlmHealth } from "./LlmHealth";
 import { MoneyStrip } from "./MoneyStrip";
-import { PrismPlaceholder } from "./PrismPlaceholder";
+import { PrismHero } from "@/components/prism/PrismHero";
 import { RecentActions } from "./RecentActions";
 
 export interface OverviewLiveProps {
@@ -42,6 +42,8 @@ export function OverviewLive({ initialMetrics, initialActions, initialError }: O
   const [freshActions, setFreshActions] = useState<ReadonlySet<string>>(() => new Set());
   const [flash, setFlash] = useState({ events: 0, actions: 0, x402: 0 });
   const [activeModules, setActiveModules] = useState<ReadonlySet<string>>(() => new Set());
+  // The renderers decay their own pulses from these timestamps; the set above only drives the HTML labels.
+  const [activityAt, setActivityAt] = useState<Record<string, number>>({});
   const [tick, setTick] = useState(0);
   const reconcile = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -72,6 +74,7 @@ export function OverviewLive({ initialMetrics, initialActions, initialError }: O
       if (group) setFlash((current) => ({ ...current, [group]: current[group] + 1 }));
       const moduleName = activityModule(event);
       if (moduleName) {
+        setActivityAt((current) => ({ ...current, [moduleName]: Date.now() }));
         setActiveModules((current) => new Set(current).add(moduleName));
         setTimeout(() => setActiveModules((current) => {
           const copy = new Set(current);
@@ -99,7 +102,7 @@ export function OverviewLive({ initialMetrics, initialActions, initialError }: O
 
   return (
     <div className="flex flex-col gap-4">
-      <PrismPlaceholder active={activeModules} eventsIn={eventsIn} actionsOut={actionsOut} />
+      <PrismHero activity={activityAt} active={activeModules} eventsIn={eventsIn} actionsOut={actionsOut} />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-medium text-fg-muted">{metrics ? `Showing ${WINDOWS.find((entry) => entry.value === metrics.window)?.label.toLowerCase() ?? metrics.window}` : "Metrics"}</h2>
@@ -114,7 +117,7 @@ export function OverviewLive({ initialMetrics, initialActions, initialError }: O
                 setWindow(entry.value);
                 setPending(true);
               }}
-              className={`h-7 rounded-full px-3 ${window === entry.value ? "bg-accent text-white" : "text-fg-muted hover:text-fg"}`}
+              className={`h-7 rounded-full px-3 ${window === entry.value ? "bg-accent text-on-accent" : "text-fg-muted hover:text-fg"}`}
             >
               {entry.label}
             </button>

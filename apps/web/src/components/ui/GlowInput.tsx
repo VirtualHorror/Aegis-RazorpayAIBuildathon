@@ -90,7 +90,7 @@ export function GlowInput({ value, onChange, onSubmit, label, placeholder, examp
           type="submit"
           aria-label={submitLabel}
           disabled={!canSubmit}
-          className={`flex shrink-0 items-center justify-center self-center rounded-lg text-white transition-colors disabled:bg-surface-2 disabled:text-fg-muted ${compact ? "h-7 w-7" : "h-9 w-9"} ${canSubmit ? "bg-accent hover:brightness-110" : ""}`}
+          className={`flex shrink-0 items-center justify-center self-center rounded-lg text-on-accent transition-colors disabled:bg-surface-2 disabled:text-fg-muted ${compact ? "h-7 w-7" : "h-9 w-9"} ${canSubmit ? "bg-accent hover:brightness-110" : ""}`}
         >
           {loading ? <Icon name="loader" className="spin" /> : <Icon name="send" />}
         </button>
