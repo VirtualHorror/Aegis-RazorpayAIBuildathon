@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { config as loadDotenv } from 'dotenv';
 import pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -196,6 +197,65 @@ integration('Razorpay webhook ingress', () => {
     expect(result.event_id).toMatch(/^sha256:[a-f0-9]{64}$/);
     const event = await pool.query<{ event_id: string }>('SELECT event_id FROM webhook_events');
     expect(event.rows[0]?.event_id).toBe(result.event_id);
+  });
+
+  it('does not let an unsigned request claim the idempotency key of a genuine event', async () => {
+    // Intent: regression for the ingress key-poisoning defect found verifying T3 (Bug-Feature B-004, C-C1/C-D2).
+    // Flow: forged 401 naming `evt_victim_001` -> genuine signed delivery of the same id -> must still be `accepted` with a job.
+    const eventId = 'evt_victim_001';
+    const forged = await app.inject({
+      method: 'POST',
+      url: '/webhooks/razorpay',
+      headers: { 'content-type': 'application/json', 'x-razorpay-signature': '0'.repeat(64), 'x-razorpay-event-id': eventId },
+      payload: JSON.stringify({ entity: 'event', event: 'payment.captured', contains: [], payload: {} }),
+    });
+    expect(forged.statusCode).toBe(401);
+
+    const body = paymentBody('payment.captured');
+    const genuine = await app.inject({
+      method: 'POST',
+      url: '/webhooks/razorpay',
+      headers: signedHeaders(body, eventId),
+      payload: body,
+    });
+    expect(genuine.statusCode).toBe(200);
+    expect(genuine.json<IngressResponse>()).toMatchObject({ status: 'accepted', event_id: eventId, duplicate_count: 0 });
+
+    const rows = await pool.query<{ event_id: string; status: string; signature_valid: boolean }>(
+      'SELECT event_id, status, signature_valid FROM webhook_events ORDER BY event_id',
+    );
+    // The forged delivery is still auditable, but under a namespace no signed event can ever occupy.
+    expect(rows.rows).toHaveLength(2);
+    expect(rows.rows[0]).toMatchObject({ event_id: eventId, status: 'received', signature_valid: true });
+    expect(rows.rows[1]?.event_id).toMatch(/^unverified:[a-f0-9]{64}$/);
+    expect(rows.rows[1]).toMatchObject({ status: 'ignored', signature_valid: false });
+
+    const jobs = await pool.query<{ count: string; dedupe_key: string }>(
+      "SELECT count(*)::text AS count, min(dedupe_key) AS dedupe_key FROM jobs",
+    );
+    expect(jobs.rows[0]).toMatchObject({ count: '1', dedupe_key: `process_event:${eventId}` });
+  });
+
+  it('verifies the HMAC over the raw bytes, not a re-serialised body', async () => {
+    // Intent: prove C-D2 — a body whose key order and whitespace JSON.stringify would not reproduce must still verify.
+    // Flow: sign these exact bytes -> ingress hashes request.rawBody -> accepted, and payload_sha256 matches the bytes sent.
+    const raw =
+      '{\n  "event" : "payment.authorized",\n  "entity":"event",\n  "contains":["payment"],\n' +
+      '  "payload": {"payment":{"entity":{"id":"pay_raw_001","entity":"payment","amount":100,"currency":"INR"}}},\n' +
+      '  "account_id":"acc_test","created_at":1757000000\n}';
+    expect(JSON.stringify(JSON.parse(raw))).not.toBe(raw);
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/webhooks/razorpay',
+      headers: signedHeaders(raw, 'evt_raw_bytes'),
+      payload: raw,
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json<IngressResponse>()).toMatchObject({ status: 'accepted', event_id: 'evt_raw_bytes' });
+
+    const stored = await pool.query<{ payload_sha256: string }>('SELECT payload_sha256 FROM webhook_events');
+    expect(stored.rows[0]?.payload_sha256).toBe(createHash('sha256').update(Buffer.from(raw)).digest('hex'));
   });
 
   it('returns 400 for authenticated invalid JSON but 401 for unauthenticated invalid JSON', async () => {

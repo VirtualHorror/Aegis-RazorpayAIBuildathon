@@ -111,6 +111,44 @@ apps/web: typecheck Done; lint Done; placeholder tests Done
 
 Port 4000 already had an existing API process during the runtime probe, so the same production server was started on 4010; no unrelated process was stopped.
 
+Re-run by Claude (Verification Agent) on 2026-09-05, after fixing B-004:
+
+```text
+pnpm --filter @aegis/api exec vitest run test/ingress.integration.test.ts
+Test Files  1 passed (1)      Tests  10 passed (10)
+
+pnpm typecheck && pnpm test && pnpm lint
+packages/shared: typecheck Done; 3 files / 17 tests passed; lint Done
+apps/api:        typecheck Done; 6 files / 29 tests passed; lint Done
+apps/web:        typecheck Done; lint Done; placeholder tests Done
+```
+
+Red-green proof for the new regression test (`does not let an unsigned request claim the idempotency key of a genuine event`) — revert only `ingressKey(...)` in `razorpay-webhook.ts` and the test fails while the other nine still pass:
+
+```text
+fix reverted:  × does not let an unsigned request claim ...   Tests  1 failed | 9 passed (10)
+fix restored:  Test Files  1 passed (1)                       Tests  10 passed (10)
+```
+
+Live HTTP probe (real socket, `API_PORT=4021`, `NODE_ENV=production`, DB `aegis_test`) — forged request first, genuine delivery second, Razorpay retry third:
+
+```text
+1) FORGED signature, claims evt_live_victim:  {"error":"invalid_signature"}                                      HTTP 401
+2) GENUINE signature, same event id:          {"status":"accepted","event_id":"evt_live_victim","duplicate_count":0}   HTTP 200
+3) RAZORPAY RETRY (same genuine delivery):    {"status":"duplicate","event_id":"evt_live_victim","duplicate_count":1}  HTTP 200
+
+                                  event_id                                   |  status  | signature_valid | duplicate_count
+-----------------------------------------------------------------------------+----------+-----------------+-----------------
+ unverified:4fbe5753da78c8425c2f4e3ce8f008d94d3b6d9fb83bd4457b6f8c596e443df4 | ignored  | f               |               0
+ evt_live_victim                                                             | received | t               |               1
+
+ jobs |          dedupe_key
+------+-------------------------------
+    1 | process_event:evt_live_victim
+```
+
+The same probe proves C-D2 end-to-end: the signed body carries newlines, two-space indentation and `"event" : ` spacing that `JSON.stringify(JSON.parse(body))` does not reproduce, and it still verifies — so the HMAC is taken over the raw bytes, not a re-serialisation. `content-type: application/json; charset=utf-8` also reaches the Buffer parser (`evt_live_charset` → accepted, 1 job). Probe server stopped by PID (`kill 51908`); the unrelated process on port 4000 (pid 31148) was left running.
+
 ## T4 — worker + projections (acceptance, pending)
 
 ```bash

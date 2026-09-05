@@ -26,7 +26,9 @@ POST /webhooks/razorpay
    ├─ verifySignature(raw, headers['x-razorpay-signature'], config.RAZORPAY_WEBHOOK_SECRET)   src/ingress/signature.ts
    │     HMAC-SHA256 hex → Buffer compare with crypto.timingSafeEqual; length mismatch → false
    ├─ invalid → reconcile(... status='ignored') → 401 {"error":"invalid_signature"}       (still persisted: status='ignored', signature_valid=false)
-   ├─ eventId = headers['x-razorpay-event-id'] ?? 'sha256:' + sha256(raw)
+   │     keyed 'unverified:' + sha256(raw), NOT the caller's x-razorpay-event-id — an unsigned request must never
+   │     take the key a genuine delivery will use, or Razorpay's real event answers 'duplicate' and is lost (D-031, B-004)
+   ├─ eventId = signatureValid ? (headers['x-razorpay-event-id'] ?? 'sha256:' + sha256(raw)) : 'unverified:' + sha256(raw)
    ├─ parsed = RazorpayWebhookSchema.safeParse(JSON.parse(raw))                          packages/shared/src/razorpay/webhook.ts
    ├─ reconcile(pools.rw, { eventId, eventType, payload, sha256, signatureValid })       src/ingress/reconciler.ts
    │     BEGIN

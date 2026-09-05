@@ -271,7 +271,7 @@ CREATE TABLE audit_log (
 
 ---
 
-### Task 3: Idempotent webhook ingress (HMAC, dedupe, transactional outbox)
+### Task 3: Idempotent webhook ingress (HMAC, dedupe, transactional outbox) — **DONE by Codex (2026-09-05) · verified GREEN by Claude (2026-09-05, after fixing B-004)**
 
 **Goal.** `POST /webhooks/razorpay` verifies the signature on raw bytes, persists the event exactly once, enqueues exactly one job in the same transaction, and answers duplicates with `200 {"status":"duplicate"}`.
 

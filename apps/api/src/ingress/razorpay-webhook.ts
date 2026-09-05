@@ -54,6 +54,19 @@ function hashBody(rawBody: Buffer): string {
   return createHash('sha256').update(rawBody).digest('hex');
 }
 
+/**
+ * Choose the idempotency key that `webhook_events.event_id` will hold.
+ * Intent: `x-razorpay-event-id` is attacker-controlled until the HMAC passes, so an unauthenticated caller must never be
+ *   able to occupy the key a genuine delivery will use (C-C1 orders verification before the upsert). Without this split a
+ *   forged 401 request claiming `evt_X` inserts the row first; Razorpay's real `evt_X` then hits ON CONFLICT, is answered
+ *   `200 {"status":"duplicate"}`, enqueues no job, and is dropped forever because a 200 stops Razorpay retrying.
+ * Flow: signature valid -> trust the provider's event id (or the body hash when the header is absent);
+ *   signature invalid -> key into a separate `unverified:` namespace derived only from bytes we hashed ourselves.
+ */
+function ingressKey(claimedEventId: string, sha256: string, signatureValid: boolean): string {
+  return signatureValid ? claimedEventId : `unverified:${sha256}`;
+}
+
 async function notify(
   request: FastifyRequest,
   options: RazorpayWebhookHandlerOptions,
@@ -106,7 +119,8 @@ export async function handleRazorpayWebhook(
   const signature = headerValue(request.headers['x-razorpay-signature']);
   const signatureValid = verifySignature(raw, signature, options.config.RAZORPAY_WEBHOOK_SECRET);
   const eventIdHeader = headerValue(request.headers['x-razorpay-event-id']);
-  const eventId = eventIdHeader ?? `sha256:${sha256}`;
+  const claimedEventId = eventIdHeader ?? `sha256:${sha256}`;
+  const eventId = ingressKey(claimedEventId, sha256, signatureValid);
 
   let parsed: unknown;
   try {
@@ -140,6 +154,12 @@ export async function handleRazorpayWebhook(
   const rawCreatedAt = dateFromCreatedAt(rawRecord.created_at);
 
   if (!signatureValid) {
+    // Intent: keep the rejected delivery auditable without letting it name a real event (see `ingressKey`).
+    // Flow: log the id the caller claimed -> persist under the `unverified:` key -> 401 so Razorpay retries a genuine send.
+    request.log.warn(
+      { event_id: eventId, claimed_event_id: claimedEventId, event_type: rawEventType },
+      'webhook signature verification failed',
+    );
     await reconcileRejected(options, {
       eventId,
       eventType: rawEventType,

@@ -26,7 +26,7 @@
 
 ## C. Idempotency, concurrency, state
 
-- **C-C1** Never process a webhook without first persisting it idempotently on `webhook_events.event_id`. The ingress path is: verify signature → upsert event → enqueue job in the same transaction → 200.
+- **C-C1** Never process a webhook without first persisting it idempotently on `webhook_events.event_id`. The ingress path is: verify signature → upsert event → enqueue job in the same transaction → 200. An unverified delivery must never occupy a key a verified delivery could use: `x-razorpay-event-id` is untrusted until the HMAC passes, so rejected deliveries are keyed into the `unverified:<sha256(raw body)>` namespace (D-031).
 - **C-C2** Never skip the idempotency check "because it's a simulation". Duplicates must be answered `200 {"status":"duplicate"}` and counted.
 - **C-C3** Never update an entity projection without `SELECT … FOR UPDATE` and the precedence rule (`shouldApplyPaymentTransition`, `isStaleSubscriptionEvent`).
 - **C-C4** Never dequeue jobs without `FOR UPDATE SKIP LOCKED`; never lose a job on crash (outbox + sweeper).

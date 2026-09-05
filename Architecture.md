@@ -283,5 +283,5 @@ Next.js 16 App Router, Tailwind 4, `next-themes` (system default + manual toggle
 |---|---|
 | Task 1 — environment + scaffold | **done by Claude** (see `Checklist.md` T1) |
 | Task 2 — migrations + core schema + seed | **done by Codex, verified by Claude** (see `Checklist.md` T2, `TestChecklist.md` §T2) |
-| Task 3 — idempotent webhook ingress | **done by Codex** (see `Checklist.md` T3, `TestChecklist.md` §T3) |
+| Task 3 — idempotent webhook ingress | **done by Codex, verified by Claude** (see `Checklist.md` T3, `TestChecklist.md` §T3, B-004/D-031) |
 | Everything else | planned; see `Checklist.md` and the Status column in `Bug-Feature.md` |
