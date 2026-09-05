@@ -5,6 +5,7 @@ import { checkoutRecovery } from '../modules/checkout-recovery';
 import { noopModule } from '../modules/noop';
 import { subscriptionSalvager } from '../modules/subscription-salvager';
 import { B2BNegotiator, b2bNegotiator } from '../modules/b2b-negotiator';
+import { ChargebackEvidence, chargebackEvidence } from '../modules/chargeback-evidence';
 
 export interface ModuleRegistryOptions {
   readonly disabled?: string | readonly string[];
@@ -15,7 +16,8 @@ export interface ModuleRegistryOptions {
 
 /** Build the deterministic module list and apply the development kill list once at boot. */
 export function createModuleRegistry(options: ModuleRegistryOptions = {}): readonly ActionModule[] {
-  const all = options.modules ?? [checkoutRecovery, subscriptionSalvager, options.llm ? new B2BNegotiator(options.llm) : b2bNegotiator, noopModule];
+  const evidence = options.db ? new ChargebackEvidence({ db: options.db, llm: options.llm }) : chargebackEvidence;
+  const all = options.modules ?? [checkoutRecovery, subscriptionSalvager, options.llm ? new B2BNegotiator(options.llm) : b2bNegotiator, evidence, noopModule];
   const disabled = new Set(
     typeof options.disabled === 'string'
       ? options.disabled.split(',').map((name) => name.trim()).filter((name) => name.length > 0)

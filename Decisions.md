@@ -289,3 +289,7 @@
 ### D-053 · Declarative entity updates and proposal hooks (2026-09-05)
 
 Action modules execute outside row locks, including any language-model call. Projection mutations therefore return a closed `EntityStateUpdate` list; `executeAction` locks `actions` first, then the allowlisted entity row, checks optional expectations, and applies the update atomically with action effects. The optional `onProposed` hook runs only after a new action row commits, allowing evidence packets to be persisted without making `propose` side-effecting. Synthetic dunning signals use the same proposal, guard, execution and audit path.
+
+### D-055 · Deterministic evidence packets (2026-09-05)
+
+Chargeback evidence is assembled through ordered SQL reads and validated against a closed zod packet before the masked narrative call. The packet is inserted only after an action row commits through `onProposed`; execution checks the human review state before marking the simulated submission and dispute projection.
