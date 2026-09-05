@@ -286,4 +286,5 @@ Next.js 16 App Router, Tailwind 4, `next-themes` (system default + manual toggle
 | Task 2 — migrations + core schema + seed | **done by Codex, verified by Claude** (see `Checklist.md` T2, `TestChecklist.md` §T2) |
 | Task 3 — idempotent webhook ingress | **done by Codex, verified by Claude** (see `Checklist.md` T3, `TestChecklist.md` §T3, B-004/D-031) |
 | Task 4 — worker + precedence-guarded projections | **done by Codex, verified by Claude** (see `Checklist.md` T4, `TestChecklist.md` §T4, F-006/D-032–D-035, B-006) |
+| Task 5 — webhook simulator CLI | **done by Codex** (see `Checklist.md` T5, `TestChecklist.md` §T5, F-007, D-036–D-041) |
 | Everything else | planned; see `Checklist.md` and the Status column in `Bug-Feature.md` |

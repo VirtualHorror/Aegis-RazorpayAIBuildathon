@@ -38,3 +38,20 @@ describe('error shape', () => {
     expect(res.json()).toMatchObject({ error: 'not_found', request_id: expect.any(String) });
   });
 });
+
+describe('simulation route guard', () => {
+  it('does not mount the simulator in production', async () => {
+    const productionConfig = loadConfig({
+      DATABASE_URL: 'postgres://aegis:pw@localhost:5432/aegis',
+      RAZORPAY_WEBHOOK_SECRET: 'test_webhook_secret_16',
+      NODE_ENV: 'production',
+    });
+    const productionApp = await buildApp({ config: productionConfig, probeDb: async () => ({ ok: true, latencyMs: 1 }), logger: false });
+    try {
+      const response = await productionApp.inject({ method: 'POST', url: '/api/v1/sim/run', payload: { scenario: 'all' } });
+      expect(response.statusCode).toBe(404);
+    } finally {
+      await productionApp.close();
+    }
+  });
+});

@@ -187,3 +187,33 @@
 **Options.** (a) leave it: the aborted job retries after the backoff and eventually succeeds; (b) wrap projections in a serializable transaction or a table-level lock; (c) give every projection the same lock order.
 **Choice.** (c). Each projection locks its own entity row first (that row is what the precedence guard reads), then walks *toward* the foreign-key root: `disputes → payments → orders → customers`, with `subscriptions` and `invoices` directly above `customers`. `projectPayment` therefore takes the `orders` row before upserting `customers`; because `orders.customer_id` is itself a foreign key, the *creation* of a missing order still happens after the customer upsert (`lockOrder` / `createOrder` in `apps/api/src/orchestrator/projections/payments.ts`).
 **Consequences.** No pair of projections can form a lock cycle, so throughput does not depend on the retry path masking deadlocks. (a) was rejected because a deadlock costs a full backoff interval per collision, is invisible in the job's final state, and grows with `WORKER_CONCURRENCY`; (b) was rejected because it serialises unrelated entities. `C-C3` now states the order, so T8's orchestrator and the T10/T11 modules must extend it rather than invent their own.
+
+### D-036 · Canonical simulator builders and package wiring
+**Context.** The CLI runs from `scripts/`, which is not a workspace package, while the development simulation route runs inside `apps/api` and must share the exact same fixtures.
+**Choice.** Keep all scenario builders and the seeded ID factory in `packages/shared/src/sim/`; import them relatively from `scripts/simulate.ts` and re-export them through `scripts/sim/` compatibility paths. Wire the root `pnpm sim` command through `apps/api`'s `sim` script, and include `../../scripts` in the API typecheck and lint programs.
+**Consequences.** The CLI and `POST /api/v1/sim/run` cannot drift to different payload definitions, and `tsc --noEmit --listFiles` proves the out-of-package simulator is covered (C-E2, B-003). No root package-script rewrite or duplicate implementation is needed.
+
+### D-037 · Seeded IDs, timestamps, and duplicate delivery semantics
+**Context.** A simulator run must be replayable while duplicate requests must exercise ingress idempotency rather than create new events.
+**Choice.** Use a small deterministic PRNG and per-kind counters for natural-key IDs; pass `createdAt` into every builder instead of reading the clock. `--dupes N` means N additional POSTs of the identical serialized body and headers after the original. An omitted seed is generated once and printed.
+**Consequences.** A pinned seed reproduces bodies and HMACs byte-for-byte, and duplicate totals map directly to `duplicate_count` without regenerating event IDs.
+
+### D-038 · Quarantine forged simulator deliveries
+**Context.** The event-id header is untrusted until HMAC verification. Reusing a real-looking `evt_` key for an invalid signature could suppress a later genuine delivery (B-004, D-031).
+**Choice.** The `bad_signature` scenario sends a deliberately invalid HMAC, while ingress derives its durable key as `unverified:<sha256(raw body)>`; the simulator verifies that row and never treats it as a trusted event key.
+**Consequences.** Forged deliveries remain auditable (`ignored`, `signature_valid=false`) without occupying the verified idempotency namespace.
+
+### D-039 · Chaos flag is transport-only in T5
+**Context.** The LLM client that interprets chaos modes is a later task, but the simulator flag must be accepted now.
+**Choice.** `--chaos llm_down` only adds `x-aegis-chaos: llm_down` to each request. Task 5 makes no LLM calls and does not stub provider behavior.
+**Consequences.** The flag is observable by future development-only consumers without introducing nondeterministic AI behavior into ingress or projection tests (C-A1, C-A2, C-D5).
+
+### D-040 · Rate-limit responses are a first-class simulator result
+**Context.** The webhook route allows 300 requests per minute. A concurrent `--burst 400` can therefore receive HTTP 429 responses.
+**Choice.** Classify HTTP 429 as `rate_limited`, print it as its own total, and exclude it from accepted/rejected counts. The simulator never retries or silently relabels a throttled request.
+**Consequences.** The result table reflects what the API actually accepted, and a burst run can be compared with durable event/job counts without claiming rejected work was authenticated failure.
+
+### D-041 · Burst verification fails closed on retries
+**Context.** Projection lock-order regressions can self-heal through the worker retry path and otherwise disappear from final status.
+**Choice.** After a burst, query the jobs for accepted event IDs until they are terminal. Any `attempts > 1` is reported as a critical lock-order regression (including deadlock errors); success requires every accepted job to be `succeeded` with `max(attempts)=1`.
+**Consequences.** Concurrency regressions remain visible in simulator evidence instead of being hidden by longer waits or worker retries (C-C3, B-006).

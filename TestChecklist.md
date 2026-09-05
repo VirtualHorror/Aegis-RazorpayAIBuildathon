@@ -231,13 +231,48 @@ Defence in depth confirmed by reading the code and the suite, not the handoff: `
 
 Probe rows `order_v4_live` / `pay_v4_live` / `cus_v4_live` (and Codex's `*_task4_live`) remain in the development database as harmless projections; `pnpm db:seed` is unaffected by them.
 
-## T5 — simulator (acceptance, pending)
+## T5 — simulator (acceptance, passed 2026-09-05)
 
 ```bash
-pnpm sim payment_failed_3ds --dupes 3       # table: accepted=1 duplicate=3 rejected=0
-pnpm sim burst --n 50                       # accepted=50, p95 latency printed, DB shows 50 events / 50 jobs
-pnpm sim all                                # runs every scenario once
+pg_isready -h localhost -p 5432
+# localhost:5432 - accepting connections
+
+(cd apps/api && pnpm exec tsc --noEmit --listFiles | rg 'scripts/simulate\.ts|scripts/sim/(cli|ids|output|scenarios|signer|transport|types|verification)\.ts')
+# ✅ scripts/simulate.ts plus scripts/sim/{cli,ids,output,scenarios,signer,transport,types,verification}.ts
+
+pnpm --filter @aegis/shared exec vitest run src/sim/scenarios.test.ts
+# ✅ Test Files  1 passed (1) · Tests  21 passed (21)
+
+pnpm --filter @aegis/api exec vitest run test/sim-signature.test.ts test/app.test.ts
+# ✅ Test Files  2 passed (2) · Tests  5 passed (5), including the production 404 route guard
+
+# API_PORT=4041 NODE_ENV=development AEGIS_WORKER_ENABLED=true pnpm --filter @aegis/api start
+# (owned PID; stopped with kill -TERM <PID> after the probes)
+pnpm sim payment_failed_3ds_intl --dupes 3 --seed 123 --api http://127.0.0.1:4041
+# ✅ four rows; totals accepted=1 duplicate=3 rejected=0 ignored=0 rate_limited=0; p50/p95 printed
+
+pnpm sim all --seed 321 --api http://127.0.0.1:4041
+# ✅ 14 rows; totals accepted=12 duplicate=0 rejected=1 ignored=1 rate_limited=0
+# ✅ unknown_event is HTTP 200 but durable status=ignored with zero jobs
+# ✅ bad_signature is HTTP 401 and durable event_id starts with unverified:<sha256(raw)>
+
+pnpm sim burst --burst 50 --seed 777 --api http://127.0.0.1:4041
+# ✅ 50 distinct events; totals accepted=50; burst verification jobs=50/50 succeeded=50 max_attempts=1; p50/p95 printed
+
+pnpm sim burst --burst 400 --seed 888 --api http://127.0.0.1:4041
+# ✅ totals accepted=232 duplicate=0 rejected=0 ignored=0 rate_limited=168; 429s are a separate total, not rejected
+# ✅ accepted jobs max_attempts=1; no lock-order regression or deadlock retry observed
+
+psql "$DATABASE_URL" -c "SELECT status, count(*) FROM webhook_events GROUP BY status ORDER BY status;"
+# ✅ durable event statuses include ignored for unknown_event and no forged evt_ key
+psql "$DATABASE_URL" -c "SELECT status, max(attempts) FROM jobs GROUP BY status ORDER BY status;"
+# ✅ burst jobs are succeeded with max(attempts)=1
+
+pnpm typecheck && pnpm test && pnpm lint
+# ✅ typecheck/lint include scripts; shared scenario + signer tests and all existing API/web suites pass
 ```
+
+The CLI prints the selected seed so an omitted seed can be replayed. `--dupes N` reuses one body and header set; `--burst N` creates distinct seeded events concurrently. An unreachable `--api` produces one actionable error and a non-zero exit. The development-only `POST /api/v1/sim/run` route uses the same builders and is absent in production (C-D5).
 
 ## T6 — LLM client (acceptance, pending)
 

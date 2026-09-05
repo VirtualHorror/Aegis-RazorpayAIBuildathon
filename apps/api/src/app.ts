@@ -9,6 +9,7 @@ import type { DbProbeResult } from './db/pool';
 import { ingressPlugin } from './ingress';
 import type { IngressEventNotification } from './ingress/razorpay-webhook';
 import { healthRoutes } from './routes/health';
+import { simRoutes } from './routes/sim';
 
 export interface AppDeps {
   config: Config;
@@ -61,6 +62,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     db: deps.db ?? null,
     onEvent: deps.onEvent,
   });
+  if (config.NODE_ENV !== 'production') {
+    await app.register(simRoutes, { prefix: '/api/v1', config: { RAZORPAY_WEBHOOK_SECRET: config.RAZORPAY_WEBHOOK_SECRET }, db: deps.db ?? null });
+  }
   return app;
 }
 

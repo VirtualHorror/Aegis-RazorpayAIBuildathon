@@ -363,9 +363,9 @@ RETURNING *;
 **Scenarios (exact names).** `payment_failed_3ds_intl` (US Visa, `error_step=payment_authentication`, `error_reason=authentication_failed`, ₹1,499), `payment_failed_cart_dropoff` (`error_reason=payment_cancelled`, `error_source=customer`, domestic UPI), `payment_failed_insufficient_funds`, `payment_failed_intl_not_enabled` (`error_reason=international_transaction_not_allowed`), `payment_captured_after_retry` (same `order_id` as a prior failure → attribution), `subscription_pending`, `subscription_halted`, `subscription_charged` (recovery), `invoice_expired_b2b` (₹4,20,000), `invoice_paid`, `dispute_created` (₹8,999, `reason_code=goods_not_received`, `respond_by=+7d`), `order_paid`, `unknown_event` (`event: "settlement.processed"`), `bad_signature`. `all` runs each once in a sensible order. Flags: `--dupes N` (re-POST the same body+headers N times), `--burst N` (N distinct events concurrently), `--seed S`, `--api URL`, `--chaos llm_down` (sets header `x-aegis-chaos: llm_down`, honoured only in dev by the LLM client, T6).
 
 **Steps.**
-- [ ] 5.1 Envelope builder `buildWebhook({ event, entityKey, entity, accountId, createdAt })` → `{ entity:'event', account_id, event, contains:[entityKey], payload:{ [entityKey]: { entity } }, created_at }`; sign with `computeSignature` from T3 (import from `@aegis/api`? no — copy the 3-line HMAC into `scripts/sim/signer.ts` and unit-test they match).
-- [ ] 5.2 Output table: scenario, status code, `status` field, latency; totals accepted/duplicate/rejected/ignored, p50/p95.
-- [ ] 5.3 Commit `feat(t05): razorpay webhook simulator`.
+- [x] 5.1 Envelope builder `buildWebhook({ event, entityKey, entity, accountId, createdAt })` → `{ entity:'event', account_id, event, contains:[entityKey], payload:{ [entityKey]: { entity } }, created_at }`; sign with `computeSignature` from T3 (import from `@aegis/api`? no — copy the 3-line HMAC into `scripts/sim/signer.ts` and unit-test they match).
+- [x] 5.2 Output table: scenario, status code, `status` field, latency; totals accepted/duplicate/rejected/ignored, p50/p95.
+- [x] 5.3 Commit `feat(t05): razorpay webhook simulator`.
 
 **Verify.** `TestChecklist.md §T5`. **Docs.** `Flow.md` F11 → live; `Bug-Feature.md` F-007.
 

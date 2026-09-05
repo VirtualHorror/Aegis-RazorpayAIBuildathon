@@ -9,11 +9,12 @@
     "start": "tsx src/server.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src test ../../db/seed --max-warnings 0",
+    "lint": "eslint src test ../../db/seed ../../scripts --max-warnings 0",
     "db:migrate": "tsx src/db/migrate-cli.ts up",
     "db:migrate:down": "tsx src/db/migrate-cli.ts down",
     "db:status": "tsx src/db/migrate-cli.ts status",
-    "db:seed": "tsx ../../db/seed/seed.ts"
+    "db:seed": "tsx ../../db/seed/seed.ts",
+    "sim": "tsx ../../scripts/simulate.ts"
   },
   "dependencies": {
     "@aegis/shared": "workspace:*",
