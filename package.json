@@ -23,7 +23,7 @@
     "sim": "pnpm --filter @aegis/api run sim",
     "demo": "bash scripts/demo.sh",
     "setup": "bash scripts/setup.sh",
-    "x402:buy": "tsx scripts/x402-buy.ts"
+    "x402:buy": "pnpm --filter @aegis/api exec tsx ../../scripts/x402-buy.ts"
   },
   "devDependencies": {
     "@eslint/js": "~10.0.1",

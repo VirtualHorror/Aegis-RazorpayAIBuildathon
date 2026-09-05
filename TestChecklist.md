@@ -527,6 +527,17 @@ $ eslint src test scripts ../../db/seed ../../scripts --max-warnings 0
 
 The focused suite covers the exact challenge and `X-PAYMENT-RESPONSE` shapes, valid settlement, replay, expiry, tampered amount, request and daily caps, kill switch, resource binding, and two concurrent settlements of one nonce.
 
+Buyer smoke run on an alternate port because port 4000 was already occupied:
+
+```text
+API_URL=http://localhost:4100 pnpm x402:buy prod_001
+first status 402; paid status 200; paymentResponse base64({success:true, network:"aegis-sim", txId, settledAt})
+API_URL=http://localhost:4100 pnpm x402:buy prod_001 --replay
+first status 402; paid status 200; replay status 402; error nonce_already_settled
+API_URL=http://localhost:4100 pnpm x402:buy prod_001 --amount 999999
+first status 402; paid status 402; error amount_exceeds_policy
+```
+
 ## T15 — Ask Aegis (verified 2026-09-05)
 
 ```bash

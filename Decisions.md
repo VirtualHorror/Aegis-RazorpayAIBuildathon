@@ -308,3 +308,7 @@ Text-to-SQL is validated locally with `pgsql-ast-parser@12.0.2` before execution
 ### D-057 · Compliance evidence is fail-closed (2026-09-05)
 
 The scanner always runs the deterministic keyword prescreen before the fast classification call. A missing or fabricated case-sensitive evidence span, or a keyword/model category disagreement, becomes `needs_review`; model outages and malformed payloads produce medium-risk keyword-only flags with `degraded_count` incremented. Flags are serialized by `(scan_run_id, product_id)` advisory locks so retries cannot create duplicates.
+
+### D-058 · Buyer CLI uses the API workspace toolchain (2026-09-05)
+
+The x402 buyer lives under `scripts/`, while its TypeScript runner is installed in `@aegis/api`. The root command delegates to that workspace's `tsx`, and the script uses an async `main` so it remains runnable from the repository root's CommonJS package boundary. It parses the nonce from the exact `accepts[].extra` challenge shape.
