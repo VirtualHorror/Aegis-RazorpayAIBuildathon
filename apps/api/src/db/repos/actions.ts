@@ -119,6 +119,22 @@ export async function updateActionStatus(
   return result.rows[0] ? mapActionRow(result.rows[0]) : null;
 }
 
+export async function decideAction(
+  db: QueryDatabase,
+  actionId: string,
+  decision: 'approve' | 'reject',
+  actor: string,
+  note: string | null,
+): Promise<ActionRow | null> {
+  const status: ActionStatus = decision === 'approve' ? 'approved' : 'rejected';
+  const result = await db.query<ActionRow>(
+    `UPDATE actions SET status = $2, reason = $3, decided_by = $4, decided_at = now(), updated_at = now()
+     WHERE id = $1 AND status = 'pending_approval' RETURNING ${ACTION_COLUMNS}`,
+    [actionId, status, note, actor],
+  );
+  return result.rows[0] ? mapActionRow(result.rows[0]) : null;
+}
+
 export async function markActionExecution(
   db: QueryDatabase,
   actionId: string,

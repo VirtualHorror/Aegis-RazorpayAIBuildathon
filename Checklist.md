@@ -575,10 +575,10 @@ All arithmetic in integer paise with `Math.ceil` toward the merchant; unit tests
 - `GET /api/v1/metrics/summary` → `{ events: { received, duplicates, rejected, processed, dead_letter }, actions: { proposed, blocked, pending_approval, executed, rejected }, money: { recovered_paise, discounts_granted_paise, x402_revenue_paise, chargeback_exposure_paise }, humans: { reviewed, approved, rejected, rejection_rate }, llm: { calls, degraded, degraded_rate, avg_latency_ms, by_provider }, window: '24h'|'7d'|'all' }` (query `?window=`).
 
 **Steps.**
-- [ ] 13.1 Attribution: on `payment.captured` / `order.paid` route, `attribution.ts` looks for an `executed` action for the same `order_id` or `customer_id` within `attribution_window_hours`; if found: ledger `recovered_revenue` credit = amount with `ref_type='action'`, action `result.recovered_paise`, bus `action.recovered`. Never double-attribute (`ledger_entries` unique index on `(account, ref_type, ref_id)` — add migration `0003_ledger_unique.sql`).
-- [ ] 13.2 Implement routes with zod body schemas and consistent error shape `{ error: string, details? }`.
-- [ ] 13.3 Tests: approve executes exactly once under concurrent double-click (two parallel decisions → one 200, one 409); reject never executes; metrics numbers reconcile with direct SQL in the test.
-- [ ] 13.4 Commit `feat(t13): approvals, attribution ledger and metrics`.
+- [x] 13.1 Attribution: on `payment.captured` / `order.paid` route, `attribution.ts` looks for an `executed` action for the same `order_id` or `customer_id` within `attribution_window_hours`; if found: ledger `recovered_revenue` credit = amount with `ref_type='action'`, action `result.recovered_paise`, bus `action.recovered`. Never double-attribute (`ledger_entries` unique index on `(account, ref_type, ref_id)` — add migration `0003_ledger_unique.sql`).
+- [x] 13.2 Implement routes with zod body schemas and consistent error shape `{ error: string, details? }`.
+- [x] 13.3 Tests: approve executes exactly once under concurrent double-click (two parallel decisions → one 200, one 409); reject never executes; metrics numbers reconcile with direct SQL in the test.
+- [x] 13.4 Commit `feat(t13): approvals, attribution ledger and metrics`.
 
 **Verify/Docs.** `TestChecklist.md §T13`; `Flow.md` F6 → live; `Bug-Feature.md` F-015.
 

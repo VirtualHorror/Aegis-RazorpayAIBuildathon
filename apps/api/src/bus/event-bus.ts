@@ -10,6 +10,8 @@ export const BUS_EVENT_NAMES = [
   'action.executed',
   'action.failed',
   'action.rejected',
+  'action.recovered',
+  'system.kill_switch',
   'message.simulated_sent',
   'x402.settled',
   'x402.rejected',

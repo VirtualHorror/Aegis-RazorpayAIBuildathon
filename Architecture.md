@@ -301,4 +301,7 @@ Next.js 16 App Router, Tailwind 4, `next-themes` (system default + manual toggle
 | Task 8 — EventOrchestrator, action audit, and SSE bus | **implemented and green by Codex** (see `Checklist.md` T8, `TestChecklist.md` §T8, F-010, D-049–D-050; deterministic routing/guardrails, prior-failure query, action idempotency, worker chaos propagation, and SSE framing are in place) |
 | Task 9 — CheckoutRecovery module | **implemented and green by Codex** (see `Checklist.md` T9, `TestChecklist.md` §T9, F-011; deterministic payment retry links, localized templates, masked WhatsApp payloads, and pure guards are in place) |
 | Task 10 — SubscriptionSalvager module | **implemented** (dunning FSM, deterministic retry worker, synthetic orchestration, guarded recovery) |
+| Task 11 — B2BNegotiator module | **implemented** (bounded integer-paise offers, model text placeholders, approval threshold) |
+| Task 12 — ChargebackEvidence module | **implemented** (deterministic packet assembly, proposal hook, human-reviewed submission) |
+| Task 13 — approvals, attribution, and metrics | **implemented and green by Codex** (action-locked decisions, action-referenced recovery ledger, independent summary aggregates) |
 | Everything else | planned; see `Checklist.md` and the Status column in `Bug-Feature.md` |

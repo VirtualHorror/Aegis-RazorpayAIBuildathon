@@ -28,15 +28,31 @@ async function main(): Promise<void> {
   });
   const llm = createLlmClient(config);
   const bus = createEventBus();
-  const app = await buildApp({ config, db: pools.rw, probeDb: () => probeDatabase(pools.rw), llm, bus });
-  appRef.current = app;
+  const modules = createModuleRegistry({ disabled: config.AEGIS_MODULES_DISABLED, db: pools.rw, llm });
+  // Intent: construct the orchestrator before route registration so the production approval endpoints use the same
+  // module registry and execution path as the worker.
+  // Flow: create pools/LLM/bus -> construct orchestrator -> build the app with approval routes -> start worker.
   const orchestrator = new EventOrchestrator({
     db: pools.rw,
     llm,
     bus,
-    logger: app.log,
-    modules: createModuleRegistry({ disabled: config.AEGIS_MODULES_DISABLED, db: pools.rw, llm }),
+    modules,
+    logger: {
+      info: (...args) => relayLog(appRef.current?.log.info, args),
+      warn: (...args) => relayLog(appRef.current?.log.warn, args),
+      error: (...args) => relayLog(appRef.current?.log.error, args),
+      debug: (...args) => relayLog(appRef.current?.log.debug, args),
+    },
   });
+  const app = await buildApp({
+    config,
+    db: pools.rw,
+    probeDb: () => probeDatabase(pools.rw),
+    llm,
+    bus,
+    orchestrator,
+  });
+  appRef.current = app;
 
   // Intent: refuse to serve stale schema by accident, but keep booting (degraded) when the DB is simply unreachable.
   try {
@@ -88,3 +104,7 @@ main().catch((error: unknown) => {
   }
   process.exit(1);
 });
+
+function relayLog(fn: ((...args: never[]) => void) | undefined, args: unknown[]): void {
+  if (fn) fn(...(args as never[]));
+}

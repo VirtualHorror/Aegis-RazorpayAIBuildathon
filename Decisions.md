@@ -47,6 +47,9 @@
 | D-050 | 2026-09-05 | Carry development LLM chaos explicitly on `process_event` jobs and restore it in the worker | accepted |
 | D-051 | 2026-09-05 | Resume approved actions after a worker crash instead of re-proposing them | accepted |
 | D-052 | 2026-09-05 | Batch Tasks 10–16 into one Sprint 2 handoff (deliberate, recorded C-G1 deviation) | accepted |
+| D-053 | 2026-09-05 | Declarative entity updates and proposal hooks keep module side effects outside row locks | accepted |
+| D-054 | 2026-09-05 | Approval decisions lock and audit the pending action, then reuse `executeAction` for execution | accepted |
+| D-055 | 2026-09-05 | Deterministic evidence packets | accepted |
 
 ---
 
@@ -289,6 +292,10 @@
 ### D-053 · Declarative entity updates and proposal hooks (2026-09-05)
 
 Action modules execute outside row locks, including any language-model call. Projection mutations therefore return a closed `EntityStateUpdate` list; `executeAction` locks `actions` first, then the allowlisted entity row, checks optional expectations, and applies the update atomically with action effects. The optional `onProposed` hook runs only after a new action row commits, allowing evidence packets to be persisted without making `propose` side-effecting. Synthetic dunning signals use the same proposal, guard, execution and audit path.
+
+### D-054 · Approval decisions reuse the execution path (2026-09-05)
+
+The approval route locks the pending action and writes the human decision/audit row in one short transaction. An approved action is then reconstructed and passed to the existing advisory-locked `executeAction` path; rejected actions never execute. This makes concurrent human clicks resolve to one winner and one `409` without introducing a second side-effect path or holding a row lock over module code.
 
 ### D-055 · Deterministic evidence packets (2026-09-05)
 

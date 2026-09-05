@@ -481,7 +481,7 @@ T11 focused command: `pnpm --filter @aegis/api exec vitest run src/modules/b2b-n
 
 T12 focused command: `pnpm --filter @aegis/api exec vitest run src/modules/chargeback-evidence --no-file-parallelism --maxWorkers=1` -> 2 files / 4 tests passed; deterministic packet assembly, honest missing delivery, masked IDs, proposal hook persistence, and approval-gated submission.
 
-## T13 — approvals + ledger + metrics (acceptance, pending)
+## T13 — approvals + ledger + metrics (verified 2026-09-05)
 
 ```bash
 curl -s localhost:4000/api/v1/approvals | jq length                  # > 0 after sim
@@ -489,6 +489,20 @@ curl -s -X POST localhost:4000/api/v1/actions/<id>/decision -d '{"decision":"app
 curl -s localhost:4000/api/v1/metrics/summary | jq                    # money_recovered_paise, discounts_granted_paise, dedupe counts, llm degraded %
 
 ```
+
+Observed on 2026-09-05:
+
+```text
+pnpm --filter @aegis/api exec vitest run test/approvals.integration.test.ts src/orchestrator --no-file-parallelism --maxWorkers=1
+Test Files  3 passed (3)
+Tests  15 passed (15)
+pnpm --filter @aegis/api typecheck
+$ tsc --noEmit
+pnpm --filter @aegis/api lint
+$ eslint src test scripts ../../db/seed ../../scripts --max-warnings 0
+```
+
+The integration file proves action decisions serialize to one `200` and one `409` with one module execution, capture/order attribution creates one `recovered_revenue` row keyed by the action, and a second attribution is a no-op. The metrics route aggregates events, actions, ledger, audit, and diagnosis tables independently.
 
 ## T14 — x402 (acceptance, pending)
 

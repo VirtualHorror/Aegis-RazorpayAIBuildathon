@@ -168,7 +168,15 @@ export const dunningRetryHandler: JobHandler = async (job, ctx) => {
   const subscriptionId = job.payload.subscriptionId;
   const step = integer(job.payload.step);
   if (typeof subscriptionId !== 'string' || subscriptionId.length === 0 || step < 1) throw new Error('dunning_retry payload must contain subscriptionId and positive step');
-  await runDunningRetry(ctx.db, subscriptionId, step, ctx.orchestrator?.handleSynthetic ? { handleSynthetic: ctx.orchestrator.handleSynthetic } : undefined);
+  const handleSynthetic = ctx.orchestrator?.handleSynthetic;
+  await runDunningRetry(
+    ctx.db,
+    subscriptionId,
+    step,
+    handleSynthetic && ctx.orchestrator
+      ? { handleSynthetic: handleSynthetic.bind(ctx.orchestrator) }
+      : undefined,
+  );
 };
 
 async function maxDunningRetries(db: pg.Pool): Promise<number> {

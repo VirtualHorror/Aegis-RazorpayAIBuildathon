@@ -16,3 +16,21 @@ export async function insertLedgerEntry(db: QueryDatabase, draft: LedgerEntryDra
   if (id === undefined) throw new Error(`ledger insert returned no id for ${draft.refId}`);
   return Number(id);
 }
+
+/** Insert one action-referenced recovery credit, using the unique ledger key as the final idempotency boundary. */
+export async function insertRecoveredRevenueForAction(
+  db: QueryDatabase,
+  actionId: string,
+  amountPaise: number,
+  memo = 'captured payment attributed to recovery action',
+): Promise<number | null> {
+  const credit = assertSafePaise(amountPaise, 'ledger.recoveredRevenuePaise');
+  if (credit <= 0) return null;
+  const result = await db.query<{ id: number }>(
+    `INSERT INTO ledger_entries (account, credit_paise, ref_type, ref_id, memo)
+     VALUES ('recovered_revenue', $2, 'action', $1, $3)
+     ON CONFLICT (account, ref_type, ref_id) DO NOTHING RETURNING id`,
+    [actionId, credit, memo],
+  );
+  return result.rows[0]?.id === undefined ? null : Number(result.rows[0].id);
+}

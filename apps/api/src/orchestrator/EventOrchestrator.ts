@@ -1,7 +1,7 @@
 import { RazorpayWebhookSchema } from '@aegis/shared';
 import type pg from 'pg';
 import { countPriorFailures24h } from '../db/repos/diagnoses';
-import { getAction, getActionByIdempotencyKey, insertAction, listApprovedActionsForEvent } from '../db/repos/actions';
+import { decideAction as persistDecision, getAction, getActionByIdempotencyKey, getActionForUpdate, insertAction, listApprovedActionsForEvent } from '../db/repos/actions';
 import { insertAuditLog } from '../db/repos/audit';
 import { loadGuardrailConfig } from '../db/repos/guardrails';
 import { withTransaction } from '../db/tx';
@@ -12,8 +12,10 @@ import { orchestratorRules } from '../guardrails/rules';
 import { applyProjection } from './projections';
 import { routeFor, type EventRoute } from './routing';
 import { executeAction } from './execute';
+import { attributeRecovery } from './attribution';
 import type { ActionModule, ActionProposal, ActionRow, ActionStatus, EventContext, GuardRule, Logger } from './types';
-import type { EntitySnapshot } from './entity';
+import type { EntitySnapshot, ProjectionRow } from './entity';
+import type { CustomerRow } from '../db/repos/customers';
 
 const NOOP_LOGGER: Logger = Object.freeze({ info: () => undefined, warn: () => undefined, error: () => undefined, debug: () => undefined });
 
@@ -125,6 +127,16 @@ export class EventOrchestrator {
       eventAt: event.rzp_created_at ?? null,
     }));
 
+    if ((event.event_type === 'payment.captured' || event.event_type === 'order.paid') && entity.applied) {
+      const config = await loadGuardrailConfig(this.db);
+      await attributeRecovery(this.db, {
+        eventType: event.event_type,
+        entity,
+        capturedAt: event.rzp_created_at ?? eventTimestamp(null, payload.created_at),
+        attributionWindowHours: config.attribution_window_hours,
+      }, this.bus);
+    }
+
     const now = this.clock();
     let diagnosis: Diagnosis | null = null;
     if (route.diagnose) {
@@ -157,6 +169,50 @@ export class EventOrchestrator {
 
     await this.markProcessed(event, workerId, actions);
     return { eventId, status: 'processed', route, entity, diagnosis, actions };
+  }
+
+  async decideAction(actionId: string, decision: 'approve' | 'reject', actor: string, note: string | null): Promise<ActionRow | null> {
+    const decided = await withTransaction(this.db, async (tx) => {
+      const current = await getActionForUpdate(tx, actionId);
+      if (!current || current.status !== 'pending_approval') return null;
+      const updated = await persistDecision(tx, actionId, decision, actor, note);
+      if (!updated) return null;
+      await insertAuditLog(tx, {
+        actor,
+        action: decision === 'approve' ? 'action.approval_granted' : 'action.rejected',
+        entityType: updated.entity_type,
+        entityId: updated.entity_id,
+        before: current,
+        after: updated,
+        metadata: { note },
+      });
+      return updated;
+    });
+    if (!decided || decision === 'reject') return decided;
+    const eventResult = await this.db.query<PersistedEvent>('SELECT event_id, event_type, payload, signature_valid, rzp_created_at, status FROM webhook_events WHERE event_id = $1', [decided.trigger_event_id]);
+    const event = eventResult.rows[0];
+    if (!event) throw new Error(`trigger event ${decided.trigger_event_id ?? ''} not found`);
+    const payload = RazorpayWebhookSchema.parse(event.payload);
+    const snapshot = await this.loadCurrentSnapshot(decided);
+    const ctx: EventContext = { event, payload, entity: snapshot, diagnosis: null, config: await loadGuardrailConfig(this.db), now: this.clock(), logger: this.logger };
+    const module = this.modules.find((candidate) => candidate.name === decided.module);
+    if (!module) throw new Error(`action module ${decided.module} not registered`);
+    await executeAction({ db: this.db, action: decided, module, ctx, bus: this.bus, llm: this.llm, logger: this.logger, now: ctx.now });
+    return getAction(this.db, actionId);
+  }
+
+  private async loadCurrentSnapshot(action: ActionRow): Promise<EntitySnapshot> {
+    const table = action.entity_type === 'subscription' ? 'subscriptions' : action.entity_type === 'invoice' ? 'invoices' : action.entity_type === 'dispute' ? 'disputes' : action.entity_type === 'payment' ? 'payments' : 'orders';
+    const rowResult = await this.db.query<ProjectionRow>(`SELECT * FROM ${table} WHERE id = $1`, [action.entity_id]);
+    const row = rowResult.rows[0];
+    if (!row) throw new Error(`${table} ${action.entity_id} not found`);
+    const customerId = typeof row.customer_id === 'string' ? row.customer_id : action.customer_id;
+    let customer: CustomerRow | null = null;
+    if (customerId) {
+      const customerResult = await this.db.query<CustomerRow>('SELECT * FROM customers WHERE id = $1', [customerId]);
+      customer = customerResult.rows[0] ?? null;
+    }
+    return { type: action.entity_type, row: { ...row, version: Number(row.version) }, customer, applied: true };
   }
 
   /**

@@ -117,11 +117,11 @@ Every module lives in `src/modules/<name>/index.ts` and follows `propose → gua
 - **b2b_negotiator** (T11, live): `invoice.expired` (amount ≥ ₹50,000) → `pricing.ts` computes `offerPaise = max(floor, amount·(1 − pct_round[n]))` with `pct_round=[5,10,15]` capped by `max_discount_pct` → LLM drafts the message text only (`draft_negotiation_message`), numbers injected by code → guards: floor, max pct, rounds, daily budget → `requiresApproval = true` at discount ≥ 10% → execute: outbound message + `negotiation_state='offer_sent'` + `negotiation_expiry` job (72 h). Counter-offers arrive via the simulator as `invoice.updated` notes (`counter_paise`); below-floor counters become recorded human escalations.
 - **chargeback_evidence** (T12, live): `payment.dispute.created` → `assemble.ts` collects payment, order, customer, delivery proof (from `orders.notes.delivery`), prior messages, refund policy → LLM writes `narrative` from a masked packet (or deterministic fallback) → `onProposed` persists `evidence_packets.review_status='requires_human_review'` → `actions.status='pending_approval'` → human approves (F6) → `submitted` (simulated).
 
-## F6. Human approval [planned T13]
+## F6. Human approval [live — T13]
 
 1. `GET /api/v1/approvals` lists `actions WHERE status='pending_approval'` + `evidence_packets WHERE review_status='requires_human_review'`.
 2. `POST /api/v1/actions/:id/decision {decision:'approve'|'reject', note, actor}` → `withTransaction`: `SELECT … FOR UPDATE`, assert status, update, `audit_log` row.
-3. `approve` → `executeAction(action)` → module `execute()` → persist `result`, `outbound_messages`, `ledger_entries`; status `executed|failed`; `bus.publish`.
+3. `approve` → `executeAction(action)` → module `execute()` → persist `result`, `outbound_messages`, `ledger_entries`; status `executed|failed`; `bus.publish`. Capture/order-paid events run deterministic action attribution in a short transaction and publish `action.recovered` after commit.
 4. Evidence: `POST /api/v1/evidence/:disputeId/decision` same pattern; approve → `submitted` (simulated), audit row.
 
 ## F7. x402 gateway [planned T14]

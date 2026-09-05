@@ -1,0 +1,1 @@
+DROP INDEX IF EXISTS ledger_entries_account_ref_unique_idx;

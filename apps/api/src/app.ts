@@ -15,6 +15,9 @@ import { createLlmClient } from './llm/factory';
 import type { LlmClient } from './llm/client';
 import { createEventBus, type EventBus } from './bus/event-bus';
 import { sseRoute } from './bus/sse-route';
+import type { EventOrchestrator } from './orchestrator/EventOrchestrator';
+import { approvalRoutes } from './routes/approvals';
+import { metricsRoutes } from './routes/metrics';
 
 export interface AppDeps {
   config: Config;
@@ -30,6 +33,7 @@ export interface AppDeps {
   llm?: LlmClient;
   /** Shared process-local bus used by ingress notifications, the orchestrator, and SSE clients. */
   bus?: EventBus;
+  orchestrator?: EventOrchestrator;
 }
 
 /**
@@ -68,6 +72,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(healthRoutes, { probeDb: deps.probeDb, version: AEGIS_VERSION });
   const llm = deps.llm ?? createLlmClient(config, app.log);
   await app.register(systemRoutes, { llm });
+  if (deps.db) {
+    await app.register(metricsRoutes, { db: deps.db });
+    if (deps.orchestrator) await app.register(approvalRoutes, { db: deps.db, orchestrator: deps.orchestrator });
+  }
   await app.register(sseRoute, { bus, webOrigin: config.WEB_ORIGIN });
   await app.register(ingressPlugin, {
     prefix: '/webhooks',
