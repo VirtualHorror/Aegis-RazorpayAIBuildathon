@@ -3,7 +3,11 @@ import { buildApp } from '../src/app';
 import { loadConfig } from '../src/config';
 import type { DbProbeResult } from '../src/db/pool';
 
-const config = loadConfig({ DATABASE_URL: 'postgres://aegis:pw@localhost:5432/aegis', NODE_ENV: 'test' });
+const config = loadConfig({
+  DATABASE_URL: 'postgres://aegis:pw@localhost:5432/aegis',
+  RAZORPAY_WEBHOOK_SECRET: 'test_webhook_secret_16',
+  NODE_ENV: 'test',
+});
 let app: Awaited<ReturnType<typeof buildApp>> | undefined;
 afterEach(async () => {
   await app?.close();

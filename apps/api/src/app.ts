@@ -1,16 +1,23 @@
 import { randomUUID } from 'node:crypto';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
+import type pg from 'pg';
 import { AEGIS_VERSION } from '@aegis/shared';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
 import type { Config } from './config';
 import type { DbProbeResult } from './db/pool';
+import { ingressPlugin } from './ingress';
+import type { IngressEventNotification } from './ingress/razorpay-webhook';
 import { healthRoutes } from './routes/health';
 
 export interface AppDeps {
   config: Config;
   /** Injected so tests can simulate an unreachable database without a real connection. */
   probeDb: () => Promise<DbProbeResult>;
+  /** Read-write pool used by the transactional webhook ingress. Null keeps health-only tests database independent. */
+  db?: pg.Pool;
+  /** Future bus hook; T3 keeps it injectable until the event bus lands in T8. */
+  onEvent?: (notification: IngressEventNotification) => void | Promise<void>;
   /** Override the logger (tests pass `false`). */
   logger?: FastifyServerOptions['logger'];
 }
@@ -19,7 +26,7 @@ export interface AppDeps {
  * Build the Fastify app without listening.
  * Intent: everything (plugins, routes, error shape) is wired here so tests use `app.inject()` on the exact production app.
  * Flow:   logger → CORS (dashboard origin only) → rate limit (600/min default, per-route overrides) →
- *         error/404 handlers → routes. Later tasks register ingress (/webhooks), api/v1, x402 and the SSE stream here.
+ *         error/404 handlers → health + encapsulated ingress routes (when a DB pool is supplied).
  */
 export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const { config } = deps;
@@ -48,6 +55,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   });
 
   await app.register(healthRoutes, { probeDb: deps.probeDb, version: AEGIS_VERSION });
+  await app.register(ingressPlugin, {
+    prefix: '/webhooks',
+    config,
+    db: deps.db ?? null,
+    onEvent: deps.onEvent,
+  });
   return app;
 }
 

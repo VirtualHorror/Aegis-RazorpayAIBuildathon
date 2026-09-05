@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { ConfigError, loadConfig } from './config';
 
-const minimal = { DATABASE_URL: 'postgres://aegis:pw@localhost:5432/aegis' };
+const minimal = {
+  DATABASE_URL: 'postgres://aegis:pw@localhost:5432/aegis',
+  RAZORPAY_WEBHOOK_SECRET: 'test_webhook_secret_16',
+};
 
 describe('loadConfig', () => {
   it('applies defaults', () => {
@@ -21,5 +24,6 @@ describe('loadConfig', () => {
     expect(() => loadConfig({})).toThrow(/DATABASE_URL/);
     expect(() => loadConfig({ ...minimal, API_PORT: '99999' })).toThrow(/API_PORT/);
     expect(() => loadConfig({ ...minimal, WEB_ORIGIN: 'not-a-url' })).toThrow(/WEB_ORIGIN/);
+    expect(() => loadConfig({ ...minimal, RAZORPAY_WEBHOOK_SECRET: 'short' })).toThrow(/RAZORPAY_WEBHOOK_SECRET/);
   });
 });

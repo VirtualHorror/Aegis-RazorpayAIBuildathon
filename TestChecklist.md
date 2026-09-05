@@ -81,7 +81,7 @@ curl -s localhost:4000/health          # after migrate; server PID-killed afterw
 pnpm typecheck && pnpm test && pnpm lint                    # ✅ shared 14 tests · api 14 tests (4 files) · web placeholder; typecheck and lint now include db/seed (B-003, D-030)
 ```
 
-## T3 — webhook ingress (acceptance, pending)
+## T3 — webhook ingress (acceptance, verified 2026-09-05)
 
 ```bash
 pnpm --filter @aegis/api test -- ingress
@@ -89,6 +89,27 @@ pnpm --filter @aegis/api test -- ingress
 # integration (aegis_test): 20 concurrent identical POSTs → 1 row, duplicate_count=19, exactly 1 job; invalid signature → 401 + row with signature_valid=false
 curl -s -X POST localhost:4000/webhooks/razorpay -H 'content-type: application/json' -d '{}'   # 401 {"error":"invalid_signature"}
 ```
+
+Observed on 2026-09-05:
+
+```text
+pnpm --filter @aegis/api test -- ingress
+Test Files  6 passed (6)
+Tests  27 passed (27)
+
+The integration suite verified: valid event → 1 event row + 1 process_event job; sequential duplicate → duplicate_count=1 with one job; Promise.all of 20 identical posts → 1 row, duplicate_count=19, exactly 1 job; invalid signature → 401 with signature_valid=false and zero jobs; unknown event → accepted/ignored with zero jobs; schema-invalid authenticated event → 202/ignored with last_error; missing event id → sha256:<64 hex> key.
+
+API_PORT=4010 pnpm --filter @aegis/api start + curl -X POST http://localhost:4010/webhooks/razorpay -H 'content-type: application/json' -d '{}'
+HTTP/1.1 401 Unauthorized
+{"error":"invalid_signature"}
+
+pnpm typecheck && pnpm test && pnpm lint
+packages/shared: typecheck Done; 3 test files / 17 tests passed; lint Done
+apps/api: typecheck Done; 6 test files / 27 tests passed; lint Done
+apps/web: typecheck Done; lint Done; placeholder tests Done
+```
+
+Port 4000 already had an existing API process during the runtime probe, so the same production server was started on 4010; no unrelated process was stopped.
 
 ## T4 — worker + projections (acceptance, pending)
 

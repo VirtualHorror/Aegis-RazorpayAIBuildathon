@@ -7,7 +7,7 @@
 
 1. `apps/api/src/server.ts` `main()` → `dotenv` loads `<repo>/.env` (path from `src/db/paths.ts`) → `loadConfig()` from `src/config.ts` (zod-validated env; exits with a readable error on a missing/invalid variable).
 2. `createPools(config)` in `src/db/pool.ts` → two `pg.Pool`s (`rw`, `readonly`). Pools are lazy; no connection is made until first query.
-3. `buildApp({ config, probeDb })` in `src/app.ts` → registers `@fastify/cors` (dashboard origin only), `@fastify/rate-limit` (600/min), UUID request ids, the error handler (`normalizeError` → `{ error, details?, request_id }`), the 404 handler, and routes (`/health` now; ingress, api/v1, x402, stream later). `probeDb` is injected so tests simulate an unreachable database.
+3. `buildApp({ config, db, probeDb })` in `src/app.ts` → registers `@fastify/cors` (dashboard origin only), `@fastify/rate-limit` (600/min), UUID request ids, the error handler (`normalizeError` → `{ error, details?, request_id }`), the 404 handler, and routes (`/health` plus the encapsulated `/webhooks/razorpay` ingress; api/v1, x402, stream later). `probeDb` is injected so tests simulate an unreachable database.
    3a. `migrationStatus(pools.rw, MIGRATIONS_DIR)`: the numbered `0001_init` and `0002_readonly_grants` migrations are checked for pending files and checksum drift; pending migrations → exit 1 (unless `AEGIS_ALLOW_PENDING_MIGRATIONS=true`), while an unreachable database → warn and continue degraded.
 4. `app.listen({ port: config.API_PORT, host: '0.0.0.0' })`.
 5. `[planned T4]` after listen: `startWorker(...)` spins `WORKER_CONCURRENCY` loops (F3).
@@ -17,25 +17,25 @@
 
 Migration commands (`src/db/migrate-cli.ts`) apply each SQL file in version order inside its own transaction, record its SHA-256 checksum in `schema_migrations`, and expose `up`, `down`, `status`, plus the documented `--status` shorthand. `0002_readonly_grants` emits a PostgreSQL warning and records as applied when the optional `aegis_readonly` role is absent; when present it grants only the non-PII customer/payment columns.
 
-## F2. Webhook ingress [planned T3]
+## F2. Webhook ingress [live]
 
 ```
 POST /webhooks/razorpay
-  src/ingress/razorpay-webhook.ts  handler(req, reply)
+  src/ingress/razorpay-webhook.ts  handleRazorpayWebhook(req, reply, options)
    ├─ req.rawBody                       (custom content-type parser keeps raw bytes; src/ingress/raw-body.ts)
    ├─ verifySignature(raw, headers['x-razorpay-signature'], config.RAZORPAY_WEBHOOK_SECRET)   src/ingress/signature.ts
    │     HMAC-SHA256 hex → Buffer compare with crypto.timingSafeEqual; length mismatch → false
-   ├─ invalid → recordRejected(raw, reason) → 401 {"error":"invalid_signature"}          (still persisted: status='ignored', signature_valid=false)
-   ├─ eventId = headers['x-razorpay-event-id'] ?? sha256(raw)
+   ├─ invalid → reconcile(... status='ignored') → 401 {"error":"invalid_signature"}       (still persisted: status='ignored', signature_valid=false)
+   ├─ eventId = headers['x-razorpay-event-id'] ?? 'sha256:' + sha256(raw)
    ├─ parsed = RazorpayWebhookSchema.safeParse(JSON.parse(raw))                          packages/shared/src/razorpay/webhook.ts
    ├─ reconcile(pools.rw, { eventId, eventType, payload, sha256, signatureValid })       src/ingress/reconciler.ts
    │     BEGIN
    │       INSERT INTO webhook_events … ON CONFLICT (event_id) DO UPDATE SET duplicate_count = duplicate_count + 1, last_duplicate_at = now()
    │         RETURNING (xmax = 0) AS inserted
-   │       IF inserted AND eventType IN ROUTES: INSERT INTO jobs(kind='process_event', payload={eventId}, dedupe_key='process_event:'+eventId)
-   │       IF inserted AND eventType NOT IN ROUTES: UPDATE webhook_events SET status='ignored'
+   │       IF inserted AND signatureValid AND status != 'ignored' AND eventType IN KNOWN_EVENT_TYPES: INSERT INTO jobs(kind='process_event', payload={eventId}, dedupe_key='process_event:'+eventId)
+   │       IF inserted AND signatureValid AND status != 'ignored' AND eventType NOT IN KNOWN_EVENT_TYPES: UPDATE webhook_events SET status='ignored'
    │     COMMIT
-   ├─ bus.publish('event.received' | 'event.duplicate', {...})                            src/bus/event-bus.ts
+   ├─ onEvent({eventId,eventType,status,...}) hook (noop until the T8 bus)                  src/ingress/index.ts
    └─ 200 {"status":"accepted"|"duplicate","event_id":…}
 ```
 Race: two identical deliveries at the same instant → one `INSERT` wins, the other blocks on the unique index and lands in `DO UPDATE` → exactly one job. Tested with `Promise.all` of 20 concurrent posts (T3 integration test).

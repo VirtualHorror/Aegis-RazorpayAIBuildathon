@@ -20,6 +20,7 @@ const EnvSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required (see .env.example)'),
   DATABASE_URL_READONLY: z.string().min(1).optional(),
   DATABASE_URL_TEST: z.string().min(1).optional(),
+  RAZORPAY_WEBHOOK_SECRET: z.string().min(16, 'RAZORPAY_WEBHOOK_SECRET must be at least 16 characters'),
   AEGIS_ALLOW_PENDING_MIGRATIONS: boolFromString.default(false),
 });
 

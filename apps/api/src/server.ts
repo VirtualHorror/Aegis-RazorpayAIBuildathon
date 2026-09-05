@@ -19,7 +19,7 @@ async function main(): Promise<void> {
   const pools = createPools(config, (error, pool) => {
     appRef.current?.log.error({ err: error, pool }, 'idle database client error');
   });
-  const app = await buildApp({ config, probeDb: () => probeDatabase(pools.rw) });
+  const app = await buildApp({ config, db: pools.rw, probeDb: () => probeDatabase(pools.rw) });
   appRef.current = app;
 
   // Intent: refuse to serve stale schema by accident, but keep booting (degraded) when the DB is simply unreachable.

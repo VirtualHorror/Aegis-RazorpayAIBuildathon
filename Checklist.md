@@ -288,7 +288,7 @@ CREATE TABLE audit_log (
 - Produces: `enqueue(...)` used by T4/T10/T11/T16.
 
 **Steps.**
-- [ ] 3.1 `signature.ts`:
+- [x] 3.1 `signature.ts`:
 ```ts
 import { createHmac, timingSafeEqual } from 'node:crypto';
 export function computeSignature(raw: Buffer, secret: string): string {
@@ -302,9 +302,9 @@ export function verifySignature(raw: Buffer, header: string | undefined, secret:
   return expected.length === given.length && timingSafeEqual(expected, given);
 }
 ```
-- [ ] 3.2 `raw-body.ts`: inside the encapsulated ingress plugin, `fastify.addContentTypeParser('application/json', { parseAs: 'buffer' }, (req, body, done) => { (req as RawBodyRequest).rawBody = body; done(null, body) })` — do NOT JSON.parse here; the handler parses after signature verification. Declare the `rawBody` augmentation in `apps/api/src/types/fastify.d.ts`.
-- [ ] 3.3 Handler flow (`razorpay-webhook.ts`): rate limit 300/min; `signatureValid = verifySignature(raw, headers['x-razorpay-signature'], secret)`; `eventId = headers['x-razorpay-event-id'] ?? 'sha256:' + sha256(raw)`; `sha256 = sha256(raw)`; parse JSON (400 on invalid JSON only if signature valid; invalid signature → persist row with `status='ignored'`, `signature_valid=false`, `event_type='unknown'` when unparsable → `401 {"error":"invalid_signature"}`); `RazorpayWebhookSchema.safeParse` (on failure: persist `status='ignored'`, reason in `last_error`, respond `202 {"status":"ignored","reason":"schema"}`); `reconcile(...)`; publish to bus (T8 will add the bus; for now call an injectable `onEvent` hook defaulting to noop); respond `200 {"status": inserted ? "accepted" : "duplicate", "event_id": eventId, "duplicate_count": n}`.
-- [ ] 3.4 `reconciler.ts` in one transaction:
+- [x] 3.2 `raw-body.ts`: inside the encapsulated ingress plugin, `fastify.addContentTypeParser('application/json', { parseAs: 'buffer' }, (req, body, done) => { (req as RawBodyRequest).rawBody = body; done(null, body) })` — do NOT JSON.parse here; the handler parses after signature verification. Declare the `rawBody` augmentation in `apps/api/src/types/fastify.d.ts`.
+- [x] 3.3 Handler flow (`razorpay-webhook.ts`): rate limit 300/min; `signatureValid = verifySignature(raw, headers['x-razorpay-signature'], secret)`; `eventId = headers['x-razorpay-event-id'] ?? 'sha256:' + sha256(raw)`; `sha256 = sha256(raw)`; parse JSON (400 on invalid JSON only if signature valid; invalid signature → persist row with `status='ignored'`, `signature_valid=false`, `event_type='unknown'` when unparsable → `401 {"error":"invalid_signature"}`); `RazorpayWebhookSchema.safeParse` (on failure: persist `status='ignored'`, reason in `last_error`, respond `202 {"status":"ignored","reason":"schema"}`); `reconcile(...)`; publish to bus (T8 will add the bus; for now call an injectable `onEvent` hook defaulting to noop); respond `200 {"status": inserted ? "accepted" : "duplicate", "event_id": eventId, "duplicate_count": n}`.
+- [x] 3.4 `reconciler.ts` in one transaction:
 ```sql
 INSERT INTO webhook_events (event_id, event_type, account_id, payload, payload_sha256, signature_valid, rzp_created_at, status)
 VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8)
@@ -312,8 +312,8 @@ ON CONFLICT (event_id) DO UPDATE SET duplicate_count = webhook_events.duplicate_
 RETURNING (xmax = 0) AS inserted, duplicate_count;
 ```
 then, only when `inserted` and `eventType ∈ KNOWN_EVENT_TYPES`: `INSERT INTO jobs (kind, payload, dedupe_key) VALUES ('process_event', jsonb_build_object('eventId', $1), 'process_event:' || $1) ON CONFLICT (dedupe_key) DO NOTHING`; unknown type → `UPDATE webhook_events SET status='ignored'`. Comment the `xmax = 0` trick (fresh insert has xmax 0; a conflict-update has a non-zero xmax).
-- [ ] 3.5 Tests. Unit: valid/invalid/missing header, length mismatch, tampered byte. Integration: (a) valid event → 1 row, 1 job; (b) same event again → `duplicate`, `duplicate_count=1`, still 1 job; (c) `Promise.all` of 20 identical POSTs → 1 row, `duplicate_count=19`, 1 job; (d) bad signature → 401 + row with `signature_valid=false`, 0 jobs; (e) unknown event type → 200 accepted, row `ignored`, 0 jobs; (f) missing `x-razorpay-event-id` → key starts with `sha256:`.
-- [ ] 3.6 Commit `feat(t03): idempotent razorpay webhook ingress`.
+- [x] 3.5 Tests. Unit: valid/invalid/missing header, length mismatch, tampered byte. Integration: (a) valid event → 1 row, 1 job; (b) same event again → `duplicate`, `duplicate_count=1`, still 1 job; (c) `Promise.all` of 20 identical POSTs → 1 row, `duplicate_count=19`, 1 job; (d) bad signature → 401 + row with `signature_valid=false`, 0 jobs; (e) unknown event type → 200 accepted, row `ignored`, 0 jobs; (f) missing `x-razorpay-event-id` → key starts with `sha256:`.
+- [x] 3.6 Commit `feat(t03): idempotent razorpay webhook ingress`.
 
 **Verify.** `TestChecklist.md §T3`. **Docs.** `Flow.md` F2 → live; `Bug-Feature.md` F-005.
 
