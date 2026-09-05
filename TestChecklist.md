@@ -297,31 +297,45 @@ The CLI prints the selected seed so an omitted seed can be replayed. `--dupes N`
 
 Probe rows from these runs (`acc_simulator` payments/orders/customers and ~700 `evt_*` webhook events) remain in the development database as harmless projections; `pnpm db:seed` is unaffected by them.
 
-## T6 — LLM client (acceptance, verified locally)
+## T6 — LLM client (acceptance, verified)
 
 ```bash
+# NOTE: this does not filter. pnpm forwards `llm` but vitest runs the whole API suite, which is why the counts below
+# are the full suite's. Use `pnpm --filter @aegis/api exec vitest run src/llm` to run the LLM files alone.
 AEGIS_LLM_PROVIDER=stub pnpm --filter @aegis/api test -- llm
-# ✅ 17 API files / 85 tests passed: stub routing + schema validation, OpenAI proxy/repair parsing, mocked Anthropic parsing,
-#    PII masking, timeout/retry/breaker/chaos resilience, factory, and /api/v1/system.
+# ✅ 18 API files / 89 tests passed: stub routing + schema validation, OpenAI proxy/repair parsing, mocked Anthropic
+#    parsing, PII masking, timeout/retry/breaker/chaos resilience, factory, /api/v1/system, and the chaos header suite.
 
 AEGIS_LLM_PROVIDER=stub pnpm --filter @aegis/api llm:smoke
 # ✅ provider=stub model=fixture-v1
-# ✅ schema-validated sample: THREE_DS_AUTH_FAILED / RETRY_LINK_LOCALIZED (exit 0)
+# ✅ {"root_cause":"THREE_DS_AUTH_FAILED","confidence":0.9,"intervention_strategy":"RETRY_LINK_LOCALIZED",...} (exit 0)
+
+# Development-only chaos header, end to end (C-D5). The probe runs in the ingress `onEvent` hook, which the handler
+# awaits inside the chaos context, so this exercises header -> AsyncLocalStorage -> ResilientLlmClient, not the store alone.
+pnpm --filter @aegis/api exec vitest run test/chaos.integration.test.ts
+# ✅ 4 tests passed: development + `x-aegis-chaos: llm_down` -> LlmUnavailableError('chaos_llm_down') with the provider
+#    never invoked; production + the same header -> provider called normally; no header -> normal; no context leak.
+# ⚠️ B-009: this only covers LLM calls made *during the request*. The worker runs in its own async context, so the
+#    header cannot reach a diagnosis call made there. T7 must carry the flag on the job, not rely on the store.
 
 # Robust fail-closed check: override DATABASE_URL with an unreachable host; do not use `env -u` because simulate.ts
 # loads the repository .env after parsing flags. Run against an isolated API on a free port.
 DATABASE_URL='postgres://nobody:nobody@127.0.0.1:5999/nowhere' \
-  pnpm --filter @aegis/api sim unknown_event --seed t6-nodb-check-final-20260905 --api http://127.0.0.1:4077
+  pnpm --filter @aegis/api sim unknown_event --seed t6-claude-verify-20260905 --api http://127.0.0.1:4088
 # ✅ warning: database classification lookup failed: connect ECONNREFUSED 127.0.0.1:5999
-# ✅ simulator error: could not verify unknown_event evt_0002_5ed5a3fc in webhook_events; DATABASE_URL is required for ignored classification (exit 1)
+# ✅ simulator error: could not verify unknown_event evt_0002_27f22d3d in webhook_events; DATABASE_URL is required for ignored classification (exit 1)
+
+curl -s http://127.0.0.1:4088/api/v1/system
+# ✅ {"provider":"stub","model":"fixture-v1","modelFast":"fixture-v1"} — description only, never a credential.
+# ✅ the API log shows `llm provider selected` exactly once, at boot.
 
 pnpm typecheck && pnpm test && pnpm lint
-# ✅ full gate green after T6: typecheck 3 projects; shared 47 tests; API 85 tests; lint 3 projects.
+# ✅ full gate green on three consecutive runs: typecheck 3 projects; shared 5 files/47 tests; API 18 files/89 tests;
+#    lint 3 projects. Run it more than once — B-008 was a ~1-in-4 flake that a single green run hid.
 
 pnpm --filter @aegis/api exec tsc --noEmit --listFiles | grep 'apps/api/scripts/llm-smoke.ts'
 # ✅ /home/nabhanyu/Downloads/RazorpayAIBuildathon/apps/api/scripts/llm-smoke.ts
 # ✅ the smoke script is included in strict TypeScript coverage (and `scripts` is included in the API lint script).
-# ✅ nullable webhook `created_at` comparisons remain explicitly narrowed before sorting; strict tsc reports no TS2362/TS18049.
 ```
 
 The smoke and provider tests use the deterministic stub for live local execution. Anthropic is SDK-mock-tested only:

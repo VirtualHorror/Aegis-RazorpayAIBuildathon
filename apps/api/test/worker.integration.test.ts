@@ -99,10 +99,13 @@ async function waitFor(check: () => Promise<boolean>, timeoutMs = 10_000): Promi
   throw new Error(`condition did not become true within ${timeoutMs}ms`);
 }
 
-async function runOneEvent(pool: pg.Pool, eventId: string, event: string, entity: Record<string, unknown>): Promise<void> {
-  const payload = webhookPayload(event, entity, 1_757_000_000);
-  await insertEvent(pool, eventId, event, payload);
-  const jobId = await insertJob(pool, eventId, 'process_event', `process_event:${eventId}`);
+/**
+ * Run a single-threaded worker until `jobId` succeeds.
+ * Intent: a test about event *precedence* must fix the arrival order itself; leaving two queued jobs to a concurrent
+ *         worker asserts on whichever one `SKIP LOCKED` happened to claim first (B-008).
+ * Flow: start one loop -> wait for this job alone -> stop the worker before the next phase is enqueued.
+ */
+async function drainJob(pool: pg.Pool, jobId: number): Promise<void> {
   const worker = startWorker({
     pools: pool,
     logger,
@@ -117,6 +120,12 @@ async function runOneEvent(pool: pg.Pool, eventId: string, event: string, entity
   } finally {
     await worker.stop();
   }
+}
+
+async function runOneEvent(pool: pg.Pool, eventId: string, event: string, entity: Record<string, unknown>): Promise<void> {
+  const payload = webhookPayload(event, entity, 1_757_000_000);
+  await insertEvent(pool, eventId, event, payload);
+  await drainJob(pool, await insertJob(pool, eventId, 'process_event', `process_event:${eventId}`));
 }
 
 integration('worker queue and projections', () => {
@@ -429,24 +438,12 @@ integration('worker queue and projections', () => {
     const stale = webhookPayload('subscription.activated', { entity: 'subscription', id: 'sub_stale', amount: 2000, status: 'active', customer_id: 'cus_sub_stale' }, 1_757_000_000);
     await insertEvent(pool, 'evt_sub_new', 'subscription.pending', first);
     await insertEvent(pool, 'evt_sub_old', 'subscription.activated', stale);
-    const firstJob = await insertJob(pool, 'evt_sub_new', 'process_event', 'sub-stale:1');
-    const staleJob = await insertJob(pool, 'evt_sub_old', 'process_event', 'sub-stale:2');
-    const worker = startWorker({
-      pools: pool,
-      logger,
-      handlers: createRegistry({ process_event: processEventHandler }),
-      concurrency: 2,
-      pollIntervalMs: 1,
-      disableSweeper: true,
-    });
-    try {
-      await waitFor(async () => {
-        const result = await pool.query<{ count: string }>("SELECT count(*)::text AS count FROM jobs WHERE status = 'succeeded' AND id = ANY($1::bigint[])", [[firstJob, staleJob]]);
-        return result.rows[0]?.count === '2';
-      });
-    } finally {
-      await worker.stop();
-    }
+    // Intent: `isStaleSubscriptionEvent` only fires when a newer projection already exists, so the newer event must be
+    //         projected before the older one is released — otherwise the older event legitimately creates the row and
+    //         the newer one supersedes it at version 2 (B-008).
+    // Flow: drain evt_sub_new -> then enqueue and drain evt_sub_old -> assert the stale event wrote nothing.
+    await drainJob(pool, await insertJob(pool, 'evt_sub_new', 'process_event', 'sub-stale:1'));
+    await drainJob(pool, await insertJob(pool, 'evt_sub_old', 'process_event', 'sub-stale:2'));
     const subscription = await pool.query<ProjectionState>('SELECT status, version, last_event_id, last_event_at FROM subscriptions WHERE id = $1', ['sub_stale']);
     expect(subscription.rows[0]).toMatchObject({ status: 'pending', version: 1, last_event_id: 'evt_sub_new' });
   });

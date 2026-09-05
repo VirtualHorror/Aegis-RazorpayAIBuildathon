@@ -1,47 +1,19 @@
-import { z } from 'zod';
 import type { LlmPurpose } from './client';
-
-/** Diagnosis values shared by the deterministic stub and the later diagnostician prompt. */
-export const STUB_ROOT_CAUSES = [
-  'THREE_DS_AUTH_FAILED',
-  'ISSUER_DECLINED',
-  'INSUFFICIENT_FUNDS',
-  'CARD_NOT_ENABLED_INTERNATIONAL',
-  'CUSTOMER_ABANDONED_CHECKOUT',
-  'NETWORK_TIMEOUT',
-  'RISK_BLOCKED',
-  'SUBSCRIPTION_MANDATE_FAILED',
-  'UNKNOWN',
-] as const;
-
-export const STUB_STRATEGIES = [
-  'RETRY_LINK_LOCALIZED',
-  'RETRY_ALTERNATE_METHOD',
-  'CART_RECOVERY_NUDGE',
-  'SUBSCRIPTION_DUNNING',
-  'B2B_NEGOTIATE',
-  'NO_ACTION',
-  'ESCALATE_HUMAN',
-] as const;
+import { DiagnoseOutputSchema, ROOT_CAUSES, STRATEGIES, type DiagnoseOutput } from './prompts';
 
 /**
- * The canonical diagnosis shape used by stub fixtures.
- * Intent: keeping this schema alongside the fixtures gives smoke tests and Task 7 a single, validated contract.
- * Flow: choose a fixture from input features -> parse it with the request's schema -> return only validated data.
+ * The diagnosis contract has exactly one definition — the prompt registry's — and the stub re-exports it under the
+ * fixture-oriented names instead of restating the enums.
+ * Intent: a fixture checked against its own *copy* of the schema still passes after the real prompt drifts, which is
+ *         precisely the drift the stub exists to catch (C-A2). One definition makes that divergence impossible.
+ * Flow: `./prompts` owns ROOT_CAUSES/STRATEGIES/DiagnoseOutputSchema -> fixtures are typed by it -> the caller's own
+ *       schema validates the chosen fixture inside `completeJson`.
  */
-export const DIAGNOSE_OUTPUT_SCHEMA = z.object({
-  root_cause: z.enum(STUB_ROOT_CAUSES),
-  confidence: z.number().min(0).max(1),
-  intervention_strategy: z.enum(STUB_STRATEGIES),
-  rationale: z.string().min(10).max(600),
-  customer_facing_hint: z.string().max(240).optional(),
-});
-
-// Aliases keep the schema discoverable for prompt/smoke callers while retaining the fixture-oriented name.
-export const DiagnoseOutputSchema = DIAGNOSE_OUTPUT_SCHEMA;
-export const DiagnosisSchema = DIAGNOSE_OUTPUT_SCHEMA;
-
-export type DiagnoseOutput = z.infer<typeof DIAGNOSE_OUTPUT_SCHEMA>;
+export const STUB_ROOT_CAUSES = ROOT_CAUSES;
+export const STUB_STRATEGIES = STRATEGIES;
+export const DIAGNOSE_OUTPUT_SCHEMA = DiagnoseOutputSchema;
+export { DiagnoseOutputSchema };
+export type { DiagnoseOutput };
 
 export type StubFixture = Readonly<Record<string, unknown>>;
 

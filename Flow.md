@@ -88,7 +88,11 @@ disputes ─▶ payments ─▶ orders ─▶ customers
 
 ## F4. Diagnosis [planned T7; LLM provider prerequisites live in T6]
 
-Task 6 supplies the provider boundary used by this flow: `src/llm/factory.ts` resolves `auto` once at boot, `src/llm/resilient.ts` applies timeout/retry/breaker and request-scoped development chaos, and `src/llm/mask.ts` removes PII before prompts are built. `GET /api/v1/system` exposes only `{ provider, model, modelFast }`. Anthropic coverage is SDK-mocked on this machine because `ANTHROPIC_API_KEY` is unavailable; the adapter remains available when configured.
+Task 6 supplies the provider boundary used by this flow: `src/llm/factory.ts` resolves `auto` once at boot, `src/llm/resilient.ts` applies timeout/retry/breaker and request-scoped development chaos, and `src/llm/mask.ts` removes PII before prompts are built. `src/llm/prompts/index.ts` is the single definition of `ROOT_CAUSES`/`STRATEGIES`/`DiagnoseOutputSchema` (D-045) — T7's `diagnosis/schema.ts` re-exports it rather than restating it. `GET /api/v1/system` exposes only `{ provider, model, modelFast }`. Anthropic and OpenAI coverage is SDK-mocked on this machine; no live model output is claimed.
+
+Two boundaries this flow must respect when it goes live:
+- **Chaos does not cross into the worker (B-009).** `x-aegis-chaos: llm_down` lives in an `AsyncLocalStorage` store installed around the *ingress request*. A diagnosis running in the worker loop is a different async context and will not see it, so T7 must carry the flag on the `process_event` job payload (development only) and re-enter `runWithLlmChaos` in the worker.
+- **The LLM call sits outside the projection transaction (C-A6).** `resilient.ts` retries once and can wait up to two timeout windows (2 × `LLM_TIMEOUT_MS`) before it gives up, so it must never run while a projection holds row locks.
 
 ```
 src/diagnosis/diagnostician.ts  diagnose(input)

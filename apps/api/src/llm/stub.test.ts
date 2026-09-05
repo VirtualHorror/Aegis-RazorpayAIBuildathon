@@ -1,14 +1,16 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { LlmUnavailableError } from './client';
-import { DIAGNOSE_OUTPUT_SCHEMA } from './stub-fixtures';
+// Validate the stub against the prompt registry's schema, not a fixture-local copy: that is what makes the stub a
+// real guard against schema drift rather than a self-consistent mock.
+import { DiagnoseOutputSchema } from './prompts';
 import { StubLlmClient } from './stub';
 
 const diagnosisRequest = (user: string) => ({
   purpose: 'diagnose_payment_failure' as const,
   system: 'Return diagnosis JSON.',
   user,
-  schema: DIAGNOSE_OUTPUT_SCHEMA,
+  schema: DiagnoseOutputSchema,
 });
 describe('StubLlmClient', () => {
   it.each([

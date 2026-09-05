@@ -395,6 +395,8 @@ RETURNING *;
 
 **Verify.** `TestChecklist.md §T6`. **Docs.** `Decisions.md` (only if you deviated), `Flow.md` F4 prerequisites, `Bug-Feature.md` F-008.
 
+**Verified by Claude, 2026-09-05.** GREEN. Full gate green on three consecutive runs (api 18 files / 89 tests). Changed during verification: the duplicated diagnosis contract was single-sourced onto the prompt registry (D-045), `apps/api/test/chaos.integration.test.ts` was added because the `x-aegis-chaos` header and its production gate (C-D5) had no coverage, and the order-dependent T4 subscription-precedence assertion was made deterministic (B-008). B-009 (chaos cannot reach the worker) and B-007 (cold-start projection deadlock) are open and both land on Task 7/8.
+
 ---
 
 ### Task 7: Diagnostician (deterministic hints → LLM → cross-check → fallback)
