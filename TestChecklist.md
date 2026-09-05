@@ -344,11 +344,24 @@ key is available, but its live chat request did not complete within the configur
 by mocked tests. Rate-limit-sensitive simulator bursts are not used as T6 evidence; the ingress limiter's 300/min window
 must be allowed to clear before any later burst probe.
 
-## T7 — diagnostician (acceptance, pending)
+## T7 — diagnostician (acceptance, implemented 2026-09-05)
 
 ```bash
-pnpm --filter @aegis/api test -- diagnosis
-# hints derived correctly for 6 fixtures; cross-check overrides recorded; fallback used when llm throws; diagnoses row written
+pnpm --filter @aegis/api exec vitest run src/diagnosis src/db/repos/diagnoses.test.ts --reporter verbose
+# ✅ Test Files 5 passed (5) · Tests 38 passed (38), observed 2026-09-05 16:57 UTC
+# ✅ six T5 fixtures through the stub (4 payment + pending/halted subscriptions), nested card PII masking,
+#    every cross-check row with an audit note, unapplied-event skip, and a throwing-client fallback.
+# ✅ repository integration round-trip reads numeric(4,3) confidence as number 0.9, not the driver string "0.900".
+
+pnpm typecheck && pnpm test && pnpm lint
+# ✅ run 1 (16:53 UTC): typecheck shared/api/web; shared 5 files / 47 tests; API 23 files / 128 tests; lint 3 projects.
+# ✅ run 2 (16:54 UTC): typecheck shared/api/web; shared 5 files / 47 tests; API 23 files / 128 tests; lint 3 projects.
+# ✅ run 3 (16:57 UTC): typecheck shared/api/web; shared 5 files / 47 tests; API 23 files / 128 tests; lint 3 projects.
+#    The API package command is `vitest run --no-file-parallelism --maxWorkers=1` (D-047).
+
+# A pre-fix root run with the unpinned `vitest run` command failed because schema migration hooks interleaved
+# with worker/ingress files (`relation "jobs" does not exist` and contaminated duplicate assertions). The package
+# script was pinned, then the focused suite and the three gates above were run without another test process.
 ```
 
 ## T8 — orchestrator (acceptance, pending)

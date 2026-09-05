@@ -86,23 +86,27 @@ disputes ─▶ payments ─▶ orders ─▶ customers
    - `bus.publish('action.<status>', …)`.
 7. `webhook_events.status='processed'`; audit row `actor='worker:<id>'`.
 
-## F4. Diagnosis [planned T7; LLM provider prerequisites live in T6]
+## F4. Diagnosis [live — T7; LLM provider prerequisites live in T6]
 
 Task 6 supplies the provider boundary used by this flow: `src/llm/factory.ts` resolves `auto` once at boot, `src/llm/resilient.ts` applies timeout/retry/breaker and request-scoped development chaos, and `src/llm/mask.ts` removes PII before prompts are built. `src/llm/prompts/index.ts` is the single definition of `ROOT_CAUSES`/`STRATEGIES`/`DiagnoseOutputSchema` (D-045) — T7's `diagnosis/schema.ts` re-exports it rather than restating it. `GET /api/v1/system` exposes only `{ provider, model, modelFast }`. Anthropic and OpenAI coverage is SDK-mocked on this machine; no live model output is claimed.
 
 Two boundaries this flow must respect when it goes live:
-- **Chaos does not cross into the worker (B-009).** `x-aegis-chaos: llm_down` lives in an `AsyncLocalStorage` store installed around the *ingress request*. A diagnosis running in the worker loop is a different async context and will not see it, so T7 must carry the flag on the `process_event` job payload (development only) and re-enter `runWithLlmChaos` in the worker.
+- **Chaos does not cross into the worker (B-009).** `x-aegis-chaos: llm_down` lives in an `AsyncLocalStorage` store installed around the *ingress request*. The T7 diagnostician intentionally does not read `isLlmDown()` or the chaos store; Task 8 owns carrying the development-only flag on the `process_event` job payload and re-entering `runWithLlmChaos` in the worker.
 - **The LLM call sits outside the projection transaction (C-A6).** `resilient.ts` retries once and can wait up to two timeout windows (2 × `LLM_TIMEOUT_MS`) before it gives up, so it must never run while a projection holds row locks.
 
 ```
 src/diagnosis/diagnostician.ts  diagnose(input)
-  hints  = deriveHints(payload, entity)              src/diagnosis/hints.ts   (pure: is_international, error_step, error_reason, method, amount_band, locale)
-  prompt = prompts.diagnose_payment_failure.build({ hints, payloadMasked: maskPii(payload) })   src/llm/prompts/diagnose-payment-failure.ts
+  hints  = deriveHints(payload, entity, prior_failures_24h)              src/diagnosis/hints.ts   (pure: is_international, error_step, error_reason, method, amount_band, locale)
+  prompt = prompts.diagnose_payment_failure.build({ hints, payloadMasked: maskPii(payload), entity: maskPii(entity) })   src/llm/prompts/diagnose-payment-failure.ts
   try  { out = await llm.completeJson({ purpose, system, user, schema: DiagnosisSchema }) }
   catch (LlmUnavailableError) { out = ruleBasedDiagnosis(hints); degraded = true }   src/diagnosis/fallback.ts
   final = crossCheck(out.data, hints)                 src/diagnosis/cross-check.ts   (may override root_cause/strategy; records why)
   INSERT INTO diagnoses (…)  → return Diagnosis
 ```
+
+The projection snapshot's `applied` flag is a deterministic precedence result. When it is false (duplicate or stale
+delivery), the diagnostician returns a marked, non-persisted fallback result and does not spend an LLM call; only an
+applied snapshot creates a diagnosis row.
 
 ## F5. Action modules [planned T9–T12]
 

@@ -22,4 +22,17 @@ describe('PII masking', () => {
     expect(source.customer.email).toBe('alice@example.com');
     expect(source.customer.contact).toBe('+919876543210');
   });
+
+  it('masks nested card number and security fields before prompting', () => {
+    const source = {
+      card: { number: '4111 1111 1111 1111', cvv: '123', expiry_month: '09', expiry_year: '2030' },
+    };
+    const masked = maskPii(source) as { card: Record<string, string> };
+    expect(masked.card.number).toContain('1111');
+    expect(masked.card.number).not.toContain('4111 1111 1111');
+    expect(masked.card.cvv).toBe('•••');
+    expect(masked.card.expiry_month).toBe('••');
+    expect(masked.card.expiry_year).toBe('••••');
+    expect(source.card.number).toBe('4111 1111 1111 1111');
+  });
 });

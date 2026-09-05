@@ -29,12 +29,40 @@ function maskName(value: string): string {
   return first.length === 0 ? '' : `${first}••••`;
 }
 
+function maskDigits(value: string): string {
+  if (value.length <= 4) return '•'.repeat(value.length);
+  const suffix = value.slice(-4);
+  return `${'•'.repeat(value.length - suffix.length)}${suffix}`;
+}
+
 function maskKeyValue(key: string, value: unknown): unknown {
-  if (typeof value !== 'string') return maskPii(value);
   const normalized = key.toLowerCase().replace(/[._-]/g, '');
-  if (normalized.includes('email')) return maskEmail(value);
-  if (normalized.includes('contact') || normalized.includes('phone') || normalized === 'cardnumber') return maskContact(value);
-  if (normalized === 'name' || normalized.endsWith('fullname')) return maskName(value);
+  // Intent: provider payloads can nest card details as `{ card: { number, cvv, expiry_* } }`, which a root-key-only
+  // matcher would leak to the model. Mask all card-number/security fields regardless of whether the provider sends a
+  // string or numeric value; preserving only the final four digits keeps the prompt useful without exposing PII.
+  // Flow: identify the sensitive card field -> stringify primitive -> hide every digit except its last four -> recurse
+  // for structured values so a future provider shape remains masked as well.
+  if (
+    normalized === 'number'
+    || normalized === 'cvv'
+    || normalized === 'cvc'
+    || normalized === 'securitycode'
+    || normalized === 'expiry'
+    || normalized === 'expirymonth'
+    || normalized === 'expiryyear'
+    || normalized === 'cardnumber'
+  ) {
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint') {
+      return maskDigits(String(value));
+    }
+    return maskPii(value);
+  }
+  if (typeof value === 'string') {
+    if (normalized.includes('email')) return maskEmail(value);
+    if (normalized.includes('contact') || normalized.includes('phone')) return maskContact(value);
+    if (normalized === 'name' || normalized.endsWith('fullname')) return maskName(value);
+  }
+  if (typeof value !== 'string') return maskPii(value);
   return value;
 }
 

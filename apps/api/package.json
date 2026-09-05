@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
-    "test": "vitest run",
+    "test": "vitest run --no-file-parallelism --maxWorkers=1",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src test scripts ../../db/seed ../../scripts --max-warnings 0",
     "db:migrate": "tsx src/db/migrate-cli.ts up",

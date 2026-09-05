@@ -417,8 +417,8 @@ export interface Diagnosis { id: string; rootCause: RootCause; strategy: Strateg
 export interface Diagnostician { diagnose(input: { event: WebhookEventRow; payload: RazorpayWebhook; entity: EntitySnapshot }): Promise<Diagnosis> }
 ```
 **Steps.**
-- [ ] 7.1 `hints.ts` (pure): amount bands `<₹500 micro, <₹5,000 small, <₹50,000 medium, else large`; `prior_failures_24h` is passed in by the caller (repo query), default 0.
-- [ ] 7.2 Cross-check table (implement exactly, each rule appends a note):
+- [x] 7.1 `hints.ts` (pure): amount bands `<₹500 micro, <₹5,000 small, <₹50,000 medium, else large`; `prior_failures_24h` is passed in by the caller (repo query), default 0.
+- [x] 7.2 Cross-check table (implement exactly, each rule appends a note):
   | condition | override |
   |---|---|
   | `error_step='payment_authentication'` and LLM root_cause ∉ {THREE_DS_AUTH_FAILED, NETWORK_TIMEOUT} | root_cause → THREE_DS_AUTH_FAILED |
@@ -429,10 +429,10 @@ export interface Diagnostician { diagnose(input: { event: WebhookEventRow; paylo
   | entity=subscription and strategy ∉ {SUBSCRIPTION_DUNNING, NO_ACTION, ESCALATE_HUMAN} | strategy → SUBSCRIPTION_DUNNING |
   | confidence < 0.5 | strategy → ESCALATE_HUMAN |
   | `prior_failures_24h >= 3` | strategy → ESCALATE_HUMAN (stopping rule: do not spam a customer) |
-- [ ] 7.3 `fallback.ts`: rule-based diagnosis from hints (same mapping as the stub, confidence 0.6, rationale prefixed `rule-based fallback:`), used when `LlmUnavailableError` is thrown; `degraded=true`, `degraded_reason=error.message`.
-- [ ] 7.4 `diagnostician.ts`: hints → prompt (masked payload, C-A7) → `llm.completeJson` → cross-check → persist (`diagnoses`) → return. Never inside a transaction (C-A6).
-- [ ] 7.5 Tests for six fixtures (one per scenario from T5) with the stub; with a throwing client → degraded; every cross-check row.
-- [ ] 7.6 Commit `feat(t07): diagnostician with deterministic hints and cross-checks`.
+- [x] 7.3 `fallback.ts`: rule-based diagnosis from hints (same mapping as the stub, confidence 0.6, rationale prefixed `rule-based fallback:`), used when `LlmUnavailableError` is thrown; `degraded=true`, `degraded_reason=error.message`.
+- [x] 7.4 `diagnostician.ts`: hints → prompt (masked payload, C-A7) → `llm.completeJson` → cross-check → persist (`diagnoses`) → return. Never inside a transaction (C-A6).
+- [x] 7.5 Tests for six fixtures (one per scenario from T5) with the stub; with a throwing client → degraded; every cross-check row.
+- [x] 7.6 Commit `feat(t07): diagnostician with deterministic hints and cross-checks`.
 
 **Verify.** `TestChecklist.md §T7`. **Docs.** `Flow.md` F4 → live; `Bug-Feature.md` F-009.
 

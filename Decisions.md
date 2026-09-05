@@ -40,6 +40,8 @@
 | D-033 | 2026-09-05 | Initialize `invoices.floor_amount_paise` from `amount_paise` on INSERT and never overwrite it during projection updates | accepted |
 | D-034 | 2026-09-05 | Re-check persisted `signature_valid` inside the `process_event` transaction before parsing or projecting | accepted |
 | D-035 | 2026-09-05 | Projections take rows in one global lock order (entity row, then toward the FK root) so no two projections can deadlock | accepted |
+| D-046 | 2026-09-05 | Unapplied diagnosis snapshots are returned as non-persisted deterministic results | accepted |
+| D-047 | 2026-09-05 | Pin the API Vitest command to `--no-file-parallelism --maxWorkers=1` for the shared PostgreSQL test database | accepted |
 
 ---
 
@@ -239,3 +241,13 @@
 **Context.** T6 landed the diagnosis enums and `DiagnoseOutputSchema` **twice** — once in `apps/api/src/llm/prompts/index.ts` and once, independently, in `apps/api/src/llm/stub-fixtures.ts` — and `stub.test.ts` validated the fixtures against the fixture-local copy. The stub exists precisely to catch schema drift (C-A2), so a stub checked against its own copy of the contract is self-consistent and blind: adding a root cause to the prompt registry would leave every stub test green while the stub started throwing `stub_invalid_fixture` at runtime, silently degrading every diagnosis to the fallback path. `Checklist.md` Task 7 then plans a *third* copy in `apps/api/src/diagnosis/schema.ts`.
 **Choice.** `apps/api/src/llm/prompts/index.ts` is the single definition of `ROOT_CAUSES`, `STRATEGIES`, and `DiagnoseOutputSchema`. `stub-fixtures.ts` re-exports them under its fixture-oriented names (`STUB_ROOT_CAUSES`, `STUB_STRATEGIES`, `DIAGNOSE_OUTPUT_SCHEMA`) instead of restating them, the unused third alias `DiagnosisSchema` is gone, and `stub.test.ts` imports the registry's schema. Task 7's `diagnosis/schema.ts` must re-export from the registry too, never restate the enums.
 **Consequences.** A change to the enums or bounds is a one-file change that every stub fixture is immediately validated against, so drift fails a test instead of degrading production. Import cycles are avoided because `prompts/index.ts` depends only on `client.ts` types.
+
+### D-046 · Do not diagnose unapplied projection events
+**Context.** Projection precedence marks duplicate or stale deliveries with `entity.applied = false`. Creating a new diagnosis row for one of those events would produce an audit record for state that did not win reconciliation and could trigger a later action twice.
+**Choice.** The diagnostician skips the model and persistence paths for an unapplied snapshot, returning a deterministic result with `id = skipped:<event_id>`, `provider = skipped`, and an explicit `entity_not_applied` reason. Applied snapshots retain the normal LLM/cross-check/fallback flow.
+**Consequences.** Duplicate and stale deliveries remain observable to their caller without spending model capacity or creating fresh diagnosis rows. Task 8 can choose whether to surface the marked result in its event timeline while preserving idempotent diagnosis storage.
+
+### D-047 · Explicitly serialize API Vitest files
+**Context.** Vitest 5 still interleaved database-owning files under the package command even with `fileParallelism=false` and worker limits in `vitest.config.ts`; migration rollback in the schema suite could remove `jobs` while worker tests were running.
+**Choice.** Put `--no-file-parallelism --maxWorkers=1` directly in `apps/api/package.json`'s `test` script, retaining the config limits as defense in depth.
+**Consequences.** Root `pnpm test` is deterministic for the shared `aegis_test` database at the cost of serial file startup. The three consecutive Task 7 gates use this command and all pass.
