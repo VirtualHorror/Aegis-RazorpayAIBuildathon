@@ -173,6 +173,20 @@ export const approvalRoutes: FastifyPluginAsync<ApprovalRouteOptions> = async (a
     return { items: result.rows };
   });
 
+  /** Audit trail of guardrail edits for the settings page; `audit_log` is append-only, so this is the whole history. */
+  app.get('/api/v1/guardrails/history', async (request) => {
+    const query = EntityQuery.parse(request.query ?? {});
+    const values: unknown[] = [query.limit];
+    const predicate = query.before ? 'AND created_at < $2' : '';
+    if (query.before) values.push(query.before);
+    const result = await options.db.query(
+      `SELECT id, actor, action, entity_type, entity_id, before, after, metadata, created_at
+       FROM audit_log WHERE entity_type = 'guardrail' ${predicate} ORDER BY created_at DESC, id DESC LIMIT $1`,
+      values,
+    );
+    return { items: result.rows, next: result.rows.length === query.limit ? cursorOf(result.rows.at(-1)?.created_at) : null };
+  });
+
   app.put('/api/v1/guardrails/:key', async (request, reply) => {
     const key = z.string().refine((value) => Object.prototype.hasOwnProperty.call(GUARDRAIL_VALUES, value), 'unknown guardrail').parse((request.params as { key?: string }).key);
     const body = GuardrailBody.parse(request.body ?? {});

@@ -81,7 +81,7 @@ integration('T13 approvals and attribution', () => {
   });
 
   beforeEach(async () => {
-    await pool.query('TRUNCATE TABLE jobs, webhook_events, disputes, invoices, subscriptions, payments, orders, customers, actions, outbound_messages, ledger_entries, audit_log, diagnoses, guardrail_config, compliance_flags, compliance_scan_runs, products CASCADE');
+    await pool.query('TRUNCATE TABLE jobs, webhook_events, disputes, invoices, subscriptions, payments, orders, customers, actions, outbound_messages, ledger_entries, audit_log, diagnoses, guardrail_config, compliance_flags, compliance_scan_runs, products, x402_payments CASCADE');
     await seedGuardrails(pool);
   });
 
@@ -299,4 +299,83 @@ integration('T13 approvals and attribution', () => {
     }
   });
 
+  it('signs an x402 payment header without ever exposing the facilitator secret (T21)', async () => {
+    await pool.query(
+      `INSERT INTO products (id, merchant_id, name, description, category, price_paise, currency, active, agent_purchasable)
+       VALUES ('prod_x402_lab', 'acc_test', 'Aegis USB-C Hub', 'Seven-port hub.', 'electronics', 49900, 'INR', true, true)`,
+    );
+    const orchestrator = new EventOrchestrator({ db: pool, llm: new StubLlmClient(), modules: [], now: () => now, logger });
+    const config = loadConfig({ DATABASE_URL: databaseUrl!, RAZORPAY_WEBHOOK_SECRET: 'test_webhook_secret_16', NODE_ENV: 'test', X402_SIM_SECRET: 'x402_test_secret_16_chars', X402_PAY_TO: 'merchant:test' });
+    const app = await buildApp({ config, db: pool, probeDb: async () => ({ ok: true, latencyMs: 1 }), orchestrator, llm: new StubLlmClient(), logger: false });
+    try {
+      const challenged = await app.inject({ method: 'GET', url: '/x402/products/prod_x402_lab/spec' });
+      expect(challenged.statusCode).toBe(402);
+      const accepts = (challenged.json() as { accepts: { maxAmountRequired: string; extra: { nonce: string } }[] }).accepts[0]!;
+
+      const signed = await app.inject({ method: 'POST', url: '/api/v1/sim/x402-sign', payload: { nonce: accepts.extra.nonce, amount: accepts.maxAmountRequired, payer: 'agent:test' } });
+      expect(signed.statusCode).toBe(200);
+      const body = signed.json() as { header: string; payload: { signature: string; payTo: string } };
+      // The response must never carry the secret, and only a truncated signature for display.
+      expect(JSON.stringify(body)).not.toContain('x402_test_secret_16_chars');
+      expect(body.payload.signature).toMatch(/^[0-9a-f]{8}…$/);
+      expect(body.payload.payTo).toBe('merchant:test');
+
+      const paid = await app.inject({ method: 'GET', url: '/x402/products/prod_x402_lab/spec', headers: { 'x-payment': body.header } });
+      expect(paid.statusCode).toBe(200);
+      expect(paid.headers['x-payment-response']).toBeTruthy();
+      const replay = await app.inject({ method: 'GET', url: '/x402/products/prod_x402_lab/spec', headers: { 'x-payment': body.header } });
+      expect(replay.statusCode).toBe(402);
+      expect(replay.json()).toMatchObject({ error: 'nonce_already_settled' });
+
+      const bad = await app.inject({ method: 'POST', url: '/api/v1/sim/x402-sign', payload: { nonce: accepts.extra.nonce, amount: 'not-a-number' } });
+      expect(bad.statusCode).toBe(400);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('lists guardrail edits from the audit log for the settings page (T21)', async () => {
+    const orchestrator = new EventOrchestrator({ db: pool, llm: new StubLlmClient(), modules: [], now: () => now, logger });
+    const config = loadConfig({ DATABASE_URL: databaseUrl!, RAZORPAY_WEBHOOK_SECRET: 'test_webhook_secret_16', NODE_ENV: 'test' });
+    const app = await buildApp({ config, db: pool, probeDb: async () => ({ ok: true, latencyMs: 1 }), orchestrator, llm: new StubLlmClient(), logger: false });
+    try {
+      expect((await app.inject({ method: 'GET', url: '/api/v1/guardrails/history' })).json()).toMatchObject({ items: [], next: null });
+      const updated = await app.inject({ method: 'PUT', url: '/api/v1/guardrails/max_discount_pct', payload: { value: 12, actor: 'human:test' } });
+      expect(updated.statusCode).toBe(200);
+      const history = await app.inject({ method: 'GET', url: '/api/v1/guardrails/history' });
+      expect(history.statusCode).toBe(200);
+      const items = (history.json() as { items: { actor: string; entity_id: string; before: { value: unknown }; after: { value: unknown } }[] }).items;
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({ actor: 'human:test', entity_id: 'max_discount_pct' });
+      expect(items[0]!.before.value).toBe(15);
+      expect(items[0]!.after.value).toBe(12);
+      // Only guardrail rows: an action decision writes audit rows too and must not appear here.
+      await pool.query(`INSERT INTO audit_log (actor, action, entity_type, entity_id, metadata) VALUES ('human:test', 'action.rejected', 'action', 'a1', '{}'::jsonb)`);
+      expect((((await app.inject({ method: 'GET', url: '/api/v1/guardrails/history' })).json()) as { items: unknown[] }).items).toHaveLength(1);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('publishes system.kill_switch so every dashboard sees the stop at once (B-017)', async () => {
+    const orchestrator = new EventOrchestrator({ db: pool, llm: new StubLlmClient(), modules: [], now: () => now, logger });
+    const config = loadConfig({ DATABASE_URL: databaseUrl!, RAZORPAY_WEBHOOK_SECRET: 'test_webhook_secret_16', NODE_ENV: 'test' });
+    const bus = new EventBus();
+    const seen: { name: string; data: unknown }[] = [];
+    bus.subscribe((event) => seen.push({ name: event.name, data: event.data }));
+    const app = await buildApp({ config, db: pool, probeDb: async () => ({ ok: true, latencyMs: 1 }), orchestrator, llm: new StubLlmClient(), logger: false, bus });
+    try {
+      const on = await app.inject({ method: 'PUT', url: '/api/v1/guardrails/kill_switch', payload: { value: true, actor: 'human:test' } });
+      expect(on.statusCode).toBe(200);
+      expect(seen).toContainEqual({ name: 'system.kill_switch', data: { enabled: true } });
+      const off = await app.inject({ method: 'PUT', url: '/api/v1/guardrails/kill_switch', payload: { value: false, actor: 'human:test' } });
+      expect(off.statusCode).toBe(200);
+      expect(seen.filter((event) => event.name === 'system.kill_switch')).toHaveLength(2);
+      // A non-kill-switch edit must not publish it.
+      await app.inject({ method: 'PUT', url: '/api/v1/guardrails/max_discount_pct', payload: { value: 11, actor: 'human:test' } });
+      expect(seen.filter((event) => event.name === 'system.kill_switch')).toHaveLength(2);
+    } finally {
+      await app.close();
+    }
+  });
 });

@@ -1,15 +1,22 @@
 import type { Metadata } from "next";
-import { EmptyState } from "@/components/ui/EmptyState";
+import { SettingsView } from "@/components/settings/SettingsView";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { api, describeFailure } from "@/lib/api";
 
 export const metadata: Metadata = { title: "Settings" };
+export const dynamic = "force-dynamic";
 
-/** Placeholder route (Task 17 step 17.6); the real page lands in Task 21. */
-export default function Page() {
+/** Guardrails, the kill switch and the audit trail of changes (Checklist 21.2). */
+export default async function SettingsPage() {
+  const [guardrails, history] = await Promise.all([api.guardrails(), api.guardrailHistory()]);
   return (
     <>
-      <PageHeader title="Settings" description="Guardrails, the kill switch and the change history." />
-      <EmptyState title="Not built yet" body="The guardrail form arrives with Task 21." />
+      <PageHeader title="Settings" description="The bounds every module reads before it proposes anything. Each change is audited with the name you are deciding as." />
+      <SettingsView
+        initialGuardrails={guardrails.ok ? guardrails.data.items : []}
+        initialHistory={history.ok ? history.data.items : []}
+        error={guardrails.ok ? null : describeFailure(guardrails)}
+      />
     </>
   );
 }

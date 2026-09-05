@@ -19,6 +19,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { href: "/settings", label: "Settings", icon: "sliders", description: "Guardrails and the kill switch" },
 ];
 
+/** Routes that exist but are reached from a link rather than the sidebar. */
 const EXTRA_TITLES: readonly { prefix: string; title: string }[] = [
   { prefix: "/actions/", title: "Action" },
   { prefix: "/subscriptions", title: "Subscriptions" },

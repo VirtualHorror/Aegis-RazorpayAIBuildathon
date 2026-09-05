@@ -735,6 +735,65 @@ Chrome:
 
 Found and fixed: B-015 (crash on Acknowledge, and no product copy on any card); empty-state text was unreadable over the halftone (radial scrim of the card surface); vitest could not resolve the `@/` alias once a test imported a component (alias added to `vitest.config.mts`).
 
+### T21 — x402 Lab, settings and entity views (observed 2026-09-06, Claude)
+
+```text
+$ pnpm --filter @aegis/api exec vitest run test/approvals.integration.test.ts --no-file-parallelism --maxWorkers=1
+ Test Files  1 passed (1)      Tests  10 passed (10)
+   # + x402 signing helper (challenge → sign → 200 → replay 402, secret absent from the response)
+   # + guardrail history route, + system.kill_switch publish (B-017)
+$ pnpm --filter @aegis/api exec vitest run test/app.test.ts --no-file-parallelism --maxWorkers=1
+ Test Files  1 passed (1)      Tests  7 passed (7)      # + CORS methods/exposed headers (B-016)
+$ pnpm --filter @aegis/web test
+ Test Files  9 passed (9)      Tests  36 passed (36)    # + lib/guardrails.test.ts
+
+$ curl -si -X OPTIONS localhost:4000/api/v1/guardrails/max_discount_pct -H "Origin: http://localhost:3000" -H "Access-Control-Request-Method: PUT" | grep -i allow-methods
+access-control-allow-methods: GET, HEAD, POST, PUT, OPTIONS
+$ curl -si localhost:4000/health -H "Origin: http://localhost:3000" | grep -i expose
+access-control-expose-headers: X-PAYMENT-RESPONSE
+```
+
+Chrome:
+
+- `/x402`, three clicks: **402** with `maxAmountRequired 49900`, `payTo merchant_aegis_demo` and a nonce that expires in a minute; **200** returning the product spec with the decoded `X-PAYMENT-RESPONSE` (`success: true`, `network: aegis-sim`, `txId`, `settledAt`); **402 `nonce_already_settled`** on replay. The settlement table then held five rows including the new `Settled` one and an older `Rejected · Amount exceeds policy`. The signed header is shown as the base64 string the browser sent, and the caps panel read ₹1,000 per request, ₹5,000 per payer per day, ₹1,497 settled today.
+- `/settings`: `120` in Maximum discount was refused before any request ("Enter a percentage between 0 and 100"); `12` saved and the field read "Stored: 12 · last set by human:dashboard"; the kill switch asked "Stop every module?" in a custom dialog (never `window.confirm`), turned the card red, turned the top-bar pill red **live over SSE**, and wrote `true → false` into the change history under `human:dashboard` when resumed.
+- `/subscriptions` and `/invoices` render state, salvage/negotiation state, amounts and the invoice floor.
+
+Found and fixed: B-016 (CORS blocked every guardrail PUT and hid the payment response header), B-017 (kill-switch changes never reached the bus), and the settings change history refreshed the guardrails instead of the audit trail.
+
+### T22 — prism hero, polish and accessibility (observed 2026-09-06, Claude)
+
+```text
+$ pnpm --filter @aegis/web test
+ Test Files  11 passed (11)     Tests  45 passed (45)
+   # + components/prism/prismGeometry.test.ts, components/prism/prismUniforms.test.ts
+
+$ npx vgpu check src/components/prism/prism.wgsl        # run from apps/web
+"diagnostics": []                                        # parses, reflection lists the `params` uniform
+"validation": { "attempted": true, "ok": false, "skipped": { "code": "VGPU-WGSL-VALIDATE-NO-DEVICE" } }
+   # no WebGPU adapter on this VM (DV-010); the browser is the real check and it was run
+
+$ pnpm --filter @aegis/web build
+✓ Compiled successfully — 13 routes
+```
+
+Chrome (claude-in-chrome for interaction, chrome-devtools for Lighthouse):
+
+- `/`: the prism renders, the entry beam follows the pointer and the fan sweeps with it, and the legend lights per module when a bus event arrives. `navigator.gpu` exists in this browser but `requestAdapter()` returns null, so `PrismWebGPU` fell back to `PrismCanvas2D` and logged `[aegis] WebGPU prism unavailable, using the Canvas 2D renderer: navigator.gpu.requestAdapter() returned null` — the C-F4 fallback proven live rather than argued.
+- Run demo while watching the hero: "Demo sent 14 webhooks … p95 69 ms", counters moved 1,922 → 1,930 → 1,934 events and 9 → 13 actions, and the KPI tiles flashed.
+- 360px (same-origin iframe): `scrollWidth 342 ≤ innerWidth 357`, the hero copy stacks above the picture, the canvas keeps its 960:280 aspect, the bottom bar shows the eight targets.
+
+Lighthouse (navigation mode):
+
+| Page | Device | Accessibility | Failed audits |
+|---|---|---|---|
+| `/` | desktop | 100 | 0 |
+| `/events` | mobile | 100 | 0 |
+| `/approvals` | mobile | 100 | 0 |
+| `/x402` | mobile | 100 | 0 |
+
+Found and fixed: B-018 (white on the dark-mode accent measured 3.13:1 — `/` scored 96 before the `--on-accent` token); the x402 stepper used `h3` under no `h2`, breaking heading order (`/x402` scored 99 before it became a paragraph); and five React purity/ref errors the linter caught in the renderers (refs are now written in effects, and the renderer choice comes from `useSyncExternalStore`).
+
 ## T23–T24 — demo + hardening (acceptance, pending)
 
 ```bash

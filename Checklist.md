@@ -704,29 +704,29 @@ All arithmetic in integer paise with `Math.ceil` toward the merchant; unit tests
 
 ---
 
-### Task 21: x402 Lab + Settings + entity views
+### Task 21: x402 Lab + Settings + entity views — **DONE by Claude (2026-09-06)**
 
 **Files.** `app/x402/page.tsx`, `components/x402/{Stepper,ChallengeView,PaymentView,ReplayView,SettlementTable,CapsPanel}.tsx`, `app/settings/page.tsx`, `components/settings/{GuardrailForm,KillSwitch,ChangeHistory}.tsx`, `app/subscriptions/page.tsx`, `app/invoices/page.tsx` (simple tables with state badges; linked from Actions).
 
 **Steps.**
-- [ ] 21.1 x402 Lab: three-step stepper that calls the API from the browser (`GET /x402/products/:id/spec` without header → show 402 JSON; the page builds the `X-PAYMENT` header by calling a dev-only helper `POST /api/v1/sim/x402-sign` that signs with the server secret — never ship the secret to the browser — then shows the 200 + decoded `X-PAYMENT-RESPONSE`; replay → rejection). `SettlementTable` from `GET /api/v1/x402/payments` + SSE. `CapsPanel` shows the caps and today's usage.
-- [ ] 21.2 Settings: form over `GET/PUT /api/v1/guardrails` with per-key validation messages, kill switch as a large toggle with a confirm dialog (custom component, never `window.confirm`), change history from `audit_log`.
-- [ ] 21.3 Commit `feat(t21): x402 lab, settings and entity views`.
+- [x] 21.1 x402 Lab: three-step stepper that calls the API from the browser (`GET /x402/products/:id/spec` without header → show 402 JSON; the page builds the `X-PAYMENT` header by calling a dev-only helper `POST /api/v1/sim/x402-sign` that signs with the server secret — never ship the secret to the browser — then shows the 200 + decoded `X-PAYMENT-RESPONSE`; replay → rejection). `SettlementTable` from `GET /api/v1/x402/payments` + SSE. `CapsPanel` shows the caps and today's usage.
+- [x] 21.2 Settings: form over `GET/PUT /api/v1/guardrails` with per-key validation messages, kill switch as a large toggle with a confirm dialog (custom component, never `window.confirm`), change history from `audit_log`.
+- [x] 21.3 Commit `feat(t21): x402 lab, settings and entity views`.
 
 **Verify/Docs.** `Bug-Feature.md` F-023.
 
 ---
 
-### Task 22: Flourishes — PrismHero (vgpu + Canvas 2D), polish, responsiveness, accessibility
+### Task 22: Flourishes — PrismHero (vgpu + Canvas 2D), polish, responsiveness, accessibility — **DONE by Claude (2026-09-06)**
 
 **Files.** `components/prism/{prismGeometry.ts,prismGeometry.test.ts,PrismWebGPU.tsx,prism.wgsl,PrismCanvas2D.tsx,PrismHero.tsx}`; add deps in `apps/web` only: `vgpu`, `three`, `@webgpu/types` (record in `Decisions.md` with versions); `next.config.ts` (WGSL import handling per vgpu docs); polish pass over all pages.
 
 **Steps.**
-- [ ] 22.1 `prismGeometry` per `Design.md §5.1` (pure, tested: beam angle follows pointer; fan spans 18°; rest angle when pointer null).
-- [ ] 22.2 `PrismWebGPU` via `vgpu` `effect()` — before writing WGSL run `npx vgpu docs cat getting-started.md` and `npx vgpu examples search "fullscreen"`; uniforms `time, pointer, resolution, activity[7]`; module activity pulses from SSE.
-- [ ] 22.3 `PrismCanvas2D` with identical props; `PrismHero` feature-detects `navigator.gpu` and `prefers-reduced-motion`; DPR cap 2; pauses when hidden; `NEXT_PUBLIC_PRISM_MODE=auto|2d|gpu`.
-- [ ] 22.4 Polish: consistent spacing, focus rings, table density, skeletons, toasts; run Lighthouse (a11y ≥ 90, no horizontal scroll at 360px), fix findings.
-- [ ] 22.5 Commit `feat(t22): prism hero and ui polish`.
+- [x] 22.1 `prismGeometry` per `Design.md §5.1` (pure, tested: beam angle follows pointer; fan spans 18°; rest angle when pointer null).
+- [x] 22.2 `PrismWebGPU` via `vgpu` `effect()` — before writing WGSL run `npx vgpu docs cat getting-started.md` and `npx vgpu examples search "fullscreen"`; uniforms `time, pointer, resolution, activity[7]`; module activity pulses from SSE.
+- [x] 22.3 `PrismCanvas2D` with identical props; `PrismHero` feature-detects `navigator.gpu` and `prefers-reduced-motion`; DPR cap 2; pauses when hidden; `NEXT_PUBLIC_PRISM_MODE=auto|2d|gpu`.
+- [x] 22.4 Polish: consistent spacing, focus rings, table density, skeletons, toasts; run Lighthouse (a11y ≥ 90, no horizontal scroll at 360px), fix findings.
+- [x] 22.5 Commit `feat(t22): prism hero and ui polish`.
 
 **Verify/Docs.** Chrome check by the Architect (both prism paths); `Bug-Feature.md` F-024; `Design.md` status.
 

@@ -11,6 +11,7 @@ import type {
   ActionListRow,
   ActionRow,
   ApiErrorBody,
+  AuditLogRow,
   ApprovalsResponse,
   AskHistoryRow,
   AskResponse,
@@ -124,6 +125,7 @@ export const api = {
   health: () => apiFetch<HealthResponse>("/health", { timeoutMs: 2_500 }),
   system: () => apiFetch<SystemInfo>("/api/v1/system", { timeoutMs: 2_500 }),
   guardrails: () => apiFetch<{ items: GuardrailRow[] }>("/api/v1/guardrails"),
+  guardrailHistory: (limit = 50) => apiFetch<Paged<AuditLogRow>>(`/api/v1/guardrails/history${query({ limit })}`),
   updateGuardrail: (key: string, value: unknown, actor: string) =>
     apiFetch<{ guardrail: GuardrailRow }>(`/api/v1/guardrails/${encodeURIComponent(key)}`, { method: "PUT", body: { value, actor } }),
   metrics: (window: MetricsWindow) => apiFetch<MetricsSummary>(`/api/v1/metrics/summary${query({ window })}`),
@@ -150,6 +152,9 @@ export const api = {
   subscriptions: (params: { limit?: number; before?: string } = {}) => apiFetch<Paged<SubscriptionRow>>(`/api/v1/subscriptions${query(params)}`),
   invoices: (params: { limit?: number; before?: string } = {}) => apiFetch<Paged<InvoiceRow>>(`/api/v1/invoices${query(params)}`),
   disputes: (params: { limit?: number; before?: string } = {}) => apiFetch<Paged<DisputeRow>>(`/api/v1/disputes${query(params)}`),
+  /** Development only: signs an X-PAYMENT header server-side so the facilitator secret never reaches the browser. */
+  signX402: (body: { nonce: string; amount: string; payer?: string }) =>
+    apiFetch<{ header: string; payload: Record<string, unknown> }>("/api/v1/sim/x402-sign", { method: "POST", body }),
   /** Development only: the API mounts `/api/v1/sim/*` unless NODE_ENV=production (C-D5). */
   simRun: (body: { scenario: string; dupes?: number; burst?: number; seed?: number | string; chaos?: "llm_down" }) =>
     apiFetch<SimRunResult>("/api/v1/sim/run", { method: "POST", body, timeoutMs: 60_000 }),

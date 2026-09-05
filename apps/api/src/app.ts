@@ -57,7 +57,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     trustProxy: false,
   });
 
-  await app.register(cors, { origin: [config.WEB_ORIGIN] });
+  // Intent: the dashboard is a browser client on another origin, so CORS decides what it can actually do (B-016).
+  //         `methods` must name PUT (guardrail edits) and `exposedHeaders` must name X-PAYMENT-RESPONSE, or the browser
+  //         silently blocks the request / hides the header while curl keeps working.
+  await app.register(cors, {
+    origin: [config.WEB_ORIGIN],
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'OPTIONS'],
+    exposedHeaders: ['X-PAYMENT-RESPONSE'],
+  });
   await app.register(rateLimit, { global: true, max: 600, timeWindow: '1 minute' });
 
   // One error shape everywhere: { error, details?, request_id }. Validation errors keep Fastify's 400.
@@ -82,7 +89,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     await app.register(complianceRoutes, { db: deps.db });
     await app.register(x402Routes, { db: deps.db, config, bus });
     await app.register(metricsRoutes, { db: deps.db });
-    if (deps.orchestrator) await app.register(approvalRoutes, { db: deps.db, orchestrator: deps.orchestrator });
+    // The bus is required here: a kill-switch change is published on it, and every dashboard listens (B-017, C-B5).
+    if (deps.orchestrator) await app.register(approvalRoutes, { db: deps.db, orchestrator: deps.orchestrator, bus });
   }
   await app.register(sseRoute, { bus, webOrigin: config.WEB_ORIGIN });
   await app.register(ingressPlugin, {
@@ -102,7 +110,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     },
   });
   if (config.NODE_ENV !== 'production') {
-    await app.register(simRoutes, { prefix: '/api/v1', config: { RAZORPAY_WEBHOOK_SECRET: config.RAZORPAY_WEBHOOK_SECRET }, db: deps.db ?? null });
+    await app.register(simRoutes, { prefix: '/api/v1', config: { RAZORPAY_WEBHOOK_SECRET: config.RAZORPAY_WEBHOOK_SECRET, X402_SIM_SECRET: config.X402_SIM_SECRET, X402_PAY_TO: config.X402_PAY_TO }, db: deps.db ?? null });
   }
   return app;
 }

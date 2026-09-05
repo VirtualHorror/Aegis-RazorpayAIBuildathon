@@ -12,6 +12,7 @@ import { ModuleBadge } from "./ModuleBadge";
 import { OutboundPayload } from "./OutboundPayload";
 import { Timeline } from "./Timeline";
 
+/** The entity pages that exist; other types render as plain text. */
 function entityHref(type: string): string | null {
   if (type === "subscription") return "/subscriptions";
   if (type === "invoice") return "/invoices";

@@ -78,3 +78,22 @@ describe('simulation route guard', () => {
     }
   });
 });
+
+describe('CORS for the dashboard origin', () => {
+  it('allows the methods and exposes the headers the dashboard needs (B-016)', async () => {
+    const app = await appWithProbe({ ok: true, latencyMs: 1 });
+    const preflight = await app.inject({
+      method: 'OPTIONS',
+      url: '/api/v1/guardrails/max_discount_pct',
+      headers: { origin: 'http://localhost:3000', 'access-control-request-method': 'PUT', 'access-control-request-headers': 'content-type' },
+    });
+    expect(preflight.statusCode).toBeLessThan(300);
+    expect(preflight.headers['access-control-allow-origin']).toBe('http://localhost:3000');
+    // Without PUT here the browser refuses to send a guardrail edit at all, while curl keeps working.
+    expect(String(preflight.headers['access-control-allow-methods'])).toContain('PUT');
+
+    const response = await app.inject({ method: 'GET', url: '/health', headers: { origin: 'http://localhost:3000' } });
+    // The x402 Lab reads this header from a cross-origin response; it is not CORS-safelisted, so it must be exposed.
+    expect(String(response.headers['access-control-expose-headers'])).toContain('X-PAYMENT-RESPONSE');
+  });
+});

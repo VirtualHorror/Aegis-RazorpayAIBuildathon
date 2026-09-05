@@ -363,3 +363,33 @@ The x402 buyer lives under `scripts/`, while its TypeScript runner is installed 
 **Options.** (a) fetch the catalog separately (fails: `/x402/catalog` only lists agent-purchasable products, and the risky ones are not); (b) add a products endpoint; (c) return the copy with the flag.
 **Choice.** (c). Both `GET /api/v1/compliance/flags` and the status decision join `products` and return `product_name`, `product_description`, `product_category`. No PII is involved: `products` is merchant catalog copy.
 **Consequences.** One request renders the page, the highlight always has the text the span was quoted from, and a route that answers "the same row" as another now returns the same shape.
+
+### D-067 · The server signs the x402 header for the Lab (2026-09-06)
+
+**Context.** The x402 Lab has to send a valid `X-PAYMENT` header from the browser, and the simulated facilitator's HMAC secret must never leave the server (C-D3).
+**Choice.** A development-only `POST /api/v1/sim/x402-sign` takes the nonce and amount the browser received in the 402 challenge, signs the canonical string with `X402_SIM_SECRET`, and returns the base64 envelope plus a display payload whose signature is truncated to eight characters. It lives beside the other simulation routes, so it is not mounted in production (C-D5).
+**Consequences.** The Lab performs the real three-step exchange against the real gateway with no secret in the bundle. An integration test asserts the secret never appears in the response and that the signed header settles once and is refused on replay.
+
+### D-068 · Guardrail money is typed in rupees, stored in paise (2026-09-06)
+
+**Context.** `guardrail_config` stores integer paise; a person editing "auto-approve limit" thinks in rupees.
+**Choice.** `lib/guardrails.ts` parses a rupee string with at most two decimals into integer paise by string arithmetic (`rupees * 100 + fraction`), never `parseFloat * 100`, and formats the stored value back the same way. Every field also shows the stored raw value underneath, so what the API holds is never hidden.
+**Consequences.** No floating-point drift in a bound that gates money (C-B6), the API's own zod schema still refuses anything the client would have missed, and the unit tests pin `1499.99 → 149999` and the rejection of `1,499`.
+
+### D-069 · vgpu without its native Node adapter (2026-09-06)
+
+**Context.** `pnpm add vgpu` pulls `@vgpu/adapter-node` and `webgpu`, whose install scripts build Dawn so WebGPU can run headless in Node. pnpm 11 refuses to run them until each is allowed or denied in `pnpm-workspace.yaml`.
+**Choice.** Both are denied (`allowBuilds: { "@vgpu/adapter-node": false, webgpu: false }`). The hero renders in the browser; nothing in this project renders WebGPU from Node.
+**Consequences.** `pnpm install` stays fast and needs no native toolchain. The cost is that `vgpu check --require-validation` cannot acquire a device here, so the shader is parsed and reflected but not device-validated (DV-010); the browser and its Canvas 2D fallback are the real check.
+
+### D-070 · `.wgsl` as a module, shader as a file (2026-09-06)
+
+**Context.** `effect(gpu, source)` takes a string, so a bundler loader is optional. The checklist asks for `prism.wgsl` plus WGSL handling in `next.config.ts`.
+**Choice.** Keep the shader in its own `.wgsl` file, register vgpu's loader under `turbopack.rules` with `as: "*.js"` per its Next.js guide, and add `@vgpu/wgsl` as a direct devDependency so `/// <reference types="@vgpu/wgsl/wgsl-types" />` resolves under pnpm's isolated `node_modules`.
+**Consequences.** The shader is edited as WGSL with syntax support and is checkable by `vgpu check`, and `import prismShader from "./prism.wgsl"` typechecks. Neither `next dev` nor `next build` validates WGSL, which is why the CLI check is recorded separately.
+
+### D-071 · Text on an accent fill has its own token (2026-09-06)
+
+**Context.** The dark-mode accent is a light blue (`#5b8dff`); white text on it measures 3.13:1, under the 4.5:1 that C-F6 requires (B-018).
+**Choice.** `--on-accent` is white in light mode and `#0b1020` in dark mode; every accent-filled control uses it instead of a hardcoded white.
+**Consequences.** Lighthouse accessibility reaches 100 with no failed audits on `/`, `/events`, `/approvals` and `/x402`, and a future accent change only needs its partner token checked, not every button.

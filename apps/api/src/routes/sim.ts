@@ -12,6 +12,7 @@ import {
 } from '@aegis/shared';
 import type { Config } from '../config';
 import { computeSignature } from '../ingress/signature';
+import { signPayment } from '../x402/canonical';
 import type pg from 'pg';
 
 const SimRequestSchema = z.object({
@@ -32,9 +33,20 @@ const SimRequestSchema = z.object({
 const MAX_SIM_DELIVERIES = 2_000;
 
 export interface SimRouteOptions {
-  config: Pick<Config, 'RAZORPAY_WEBHOOK_SECRET'>;
+  config: Pick<Config, 'RAZORPAY_WEBHOOK_SECRET'> & Partial<Pick<Config, 'X402_SIM_SECRET' | 'X402_PAY_TO'>>;
   db: pg.Pool | null;
 }
+
+// Intent: the x402 Lab needs a signed X-PAYMENT header, and the simulated facilitator's secret must never reach the
+//         browser (C-D3). The browser sends the challenge it received; the server signs it and returns only the header.
+// Flow: parse the challenge fields -> HMAC the canonical string with X402_SIM_SECRET -> base64 the envelope -> reply.
+const X402SignSchema = z.object({
+  nonce: z.string().min(1).max(200),
+  amount: z.string().regex(/^\d{1,15}$/, 'amount must be integer paise as a string'),
+  payer: z.string().min(1).max(120).default('agent:dashboard'),
+  payTo: z.string().min(1).max(200).optional(),
+  issuedAt: z.iso.datetime().optional(),
+});
 
 interface SimDeliveryResult {
   scenario: string;
@@ -58,6 +70,31 @@ interface SimTotals {
  * Flow: parse request -> build deterministic shared fixtures -> inject raw signed deliveries into the real ingress -> summarize.
  */
 export const simRoutes: FastifyPluginAsync<SimRouteOptions> = async (app, options) => {
+  /** Development-only signing helper for the dashboard's x402 Lab; the secret stays on the server. */
+  app.post('/sim/x402-sign', async (request, reply) => {
+    const parsed = X402SignSchema.safeParse(request.body ?? {});
+    if (!parsed.success) {
+      await reply.code(400).send({ error: 'invalid_x402_sign_request', details: parsed.error.issues });
+      return;
+    }
+    const secret = options.config.X402_SIM_SECRET;
+    if (!secret) {
+      await reply.code(503).send({ error: 'x402_signing_unavailable', details: 'X402_SIM_SECRET is not configured' });
+      return;
+    }
+    const payload = {
+      nonce: parsed.data.nonce,
+      amount: parsed.data.amount,
+      asset: 'INR' as const,
+      payTo: parsed.data.payTo ?? options.config.X402_PAY_TO ?? 'merchant:aegis-demo',
+      payer: parsed.data.payer,
+      issuedAt: parsed.data.issuedAt ?? new Date().toISOString(),
+    };
+    const signature = signPayment(payload, secret);
+    const envelope = { x402Version: 1 as const, scheme: 'exact' as const, network: 'aegis-sim' as const, payload: { ...payload, signature } };
+    return { header: Buffer.from(JSON.stringify(envelope)).toString('base64'), payload: { ...payload, signature: `${signature.slice(0, 8)}…` } };
+  });
+
   app.post('/sim/run', async (request, reply) => {
     const parsed = SimRequestSchema.safeParse(request.body ?? {});
     if (!parsed.success) {
