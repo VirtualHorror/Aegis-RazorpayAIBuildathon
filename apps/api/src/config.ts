@@ -31,6 +31,7 @@ const EnvSchema = z.object({
   RAZORPAY_WEBHOOK_SECRET: z.string().min(16, 'RAZORPAY_WEBHOOK_SECRET must be at least 16 characters'),
   AEGIS_ALLOW_PENDING_MIGRATIONS: boolFromString.default(false),
   AEGIS_WORKER_ENABLED: boolFromString.default(true),
+  AEGIS_COMPLIANCE_CRON: boolFromString.default(false),
   AEGIS_MODULES_DISABLED: z.string().default(''),
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(64).default(4),
   WORKER_POLL_MS: z.coerce.number().int().min(10).max(60_000).default(500),

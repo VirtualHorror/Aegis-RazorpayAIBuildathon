@@ -550,12 +550,26 @@ $ eslint src test scripts ../../db/seed ../../scripts --max-warnings 0
 
 The focused suite covers single-statement AST validation, denied functions and schemas, allowlisted joins/CTEs, semicolon framing, readonly query persistence, and the hand-computed OLS+MA7 forecast.
 
-## T16 — compliance (acceptance, pending)
+## T16 — compliance (verified 2026-09-05)
 
 ```bash
 curl -s -X POST localhost:4000/api/v1/compliance/scan && sleep 5 && curl -s localhost:4000/api/v1/compliance/flags | jq '.[].risk_level' | sort | uniq -c
 pnpm --filter @aegis/api test -- compliance   # evidence span must be verbatim; keyword/LLM disagreement → needs_review
 ```
+
+Observed on 2026-09-05:
+
+```text
+pnpm --filter @aegis/api exec vitest run src/compliance --no-file-parallelism --maxWorkers=1
+Test Files  3 passed (3)
+Tests  9 passed (9)
+pnpm --filter @aegis/api typecheck
+$ tsc --noEmit
+pnpm --filter @aegis/api lint
+$ eslint src test scripts ../../db/seed ../../scripts --max-warnings 0
+```
+
+The focused suite covers the fixed rubric and keyword vocabulary, case-sensitive evidence verification, keyword/model disagreement, malformed and unavailable model fallbacks, and concurrent scans producing one flag per product/run.
 
 ## T17–T22 — web (acceptance, pending; verified by the Architect in Chrome)
 

@@ -304,3 +304,7 @@ Chargeback evidence is assembled through ordered SQL reads and validated against
 ### D-056 · Local AST parser for Ask Aegis (2026-09-05)
 
 Text-to-SQL is validated locally with `pgsql-ast-parser@12.0.2` before execution. The validator accepts one SELECT-only statement over the documented allowlist, rejects mutation/system-schema/denylisted-function access, and wraps valid SQL with a 200-row limit. Execution uses the separately configured readonly PostgreSQL pool with a five-second transaction-local timeout; PII columns remain unavailable by grant, so database errors are returned honestly.
+
+### D-057 · Compliance evidence is fail-closed (2026-09-05)
+
+The scanner always runs the deterministic keyword prescreen before the fast classification call. A missing or fabricated case-sensitive evidence span, or a keyword/model category disagreement, becomes `needs_review`; model outages and malformed payloads produce medium-risk keyword-only flags with `degraded_count` incremented. Flags are serialized by `(scan_run_id, product_id)` advisory locks so retries cannot create duplicates.

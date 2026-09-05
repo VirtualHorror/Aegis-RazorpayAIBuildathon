@@ -20,6 +20,7 @@ import { approvalRoutes } from './routes/approvals';
 import { metricsRoutes } from './routes/metrics';
 import { x402Routes } from './x402/routes';
 import { askRoutes } from './routes/ask';
+import { complianceRoutes } from './compliance/routes';
 
 export interface AppDeps {
   config: Config;
@@ -78,6 +79,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(systemRoutes, { llm });
   if (deps.db) {
     await app.register(askRoutes, { db: deps.db, readonlyDb: deps.readonlyDb, llm });
+    await app.register(complianceRoutes, { db: deps.db });
     await app.register(x402Routes, { db: deps.db, config, bus });
     await app.register(metricsRoutes, { db: deps.db });
     if (deps.orchestrator) await app.register(approvalRoutes, { db: deps.db, orchestrator: deps.orchestrator });

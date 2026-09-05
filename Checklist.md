@@ -634,10 +634,10 @@ All arithmetic in integer paise with `Math.ceil` toward the merchant; unit tests
 **Rubric categories (exact).** `adult_content, gambling_lottery, drugs_paraphernalia, weapons, tobacco_vape, counterfeit_ip, financial_guarantees_mlm, medical_claims_unapproved, crypto_forex_unlicensed, hate_or_illegal, none`. Schema: `{ risk_level: enum(none|low|medium|high|prohibited), category: enum(above), evidence_span: string.max(200), recommendation: string.max(300), reasoning: string.max(400) }`.
 
 **Steps.**
-- [ ] 16.1 `keywords.ts`: per category, 6–12 lowercase patterns (e.g. `guaranteed returns`, `monthly returns`, `cures`, `replica`, `first copy`, `vape`, `nicotine`, `lottery`, `betting`). `prescreen(description) → { category, pattern }[]`.
-- [ ] 16.2 `scanner.run(runId)`: for each active product → prescreen → LLM (`tier: 'fast'`) with the description only (no PII) → `verifyEvidenceSpan` (`description.includes(evidence_span)` case-sensitive; else `status='needs_review'`, note) → agreement: if keywords hit a category and the LLM says `none` → `needs_review`; upsert one flag per product per run; update run counters; degraded (LLM down) → flag from keywords only with `risk_level='medium'`, `llm_assessment=null`, `degraded_count++`.
-- [ ] 16.3 Tests: seeded risky products produce ≥ 5 flags with the expected categories using the stub; a fabricated span → `needs_review`; LLM-down path.
-- [ ] 16.4 Commit `feat(t16): compliance scanner`.
+- [x] 16.1 `keywords.ts`: per category, 6–12 lowercase patterns (e.g. `guaranteed returns`, `monthly returns`, `cures`, `replica`, `first copy`, `vape`, `nicotine`, `lottery`, `betting`). `prescreen(description) → { category, pattern }[]`.
+- [x] 16.2 `scanner.run(runId)`: for each active product → prescreen → LLM (`tier: 'fast'`) with the description only (no PII) → `verifyEvidenceSpan` (`description.includes(evidence_span)` case-sensitive; else `status='needs_review'`, note) → agreement: if keywords hit a category and the LLM says `none` → `needs_review`; upsert one flag per product per run; update run counters; degraded (LLM down) → flag from keywords only with `risk_level='medium'`, `llm_assessment=null`, `degraded_count++`.
+- [x] 16.3 Tests: seeded risky products produce ≥ 5 flags with the expected categories using the stub; a fabricated span → `needs_review`; LLM-down path.
+- [x] 16.4 Commit `feat(t16): compliance scanner`.
 
 **Verify/Docs.** `TestChecklist.md §T16`; `Flow.md` F9 → live; `Bug-Feature.md` F-018.
 

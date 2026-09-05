@@ -154,9 +154,9 @@ POST /api/v1/ask {question}
    └─ INSERT nl_queries(...) → 200 {kind, sql, rows | series+forecast, summary, degraded}; generated SQL is returned even on validation/DB failure
 ```
 
-## F9. Compliance scan [planned T16]
+## F9. Compliance scan [live — T16]
 
-`POST /api/v1/compliance/scan` → enqueue `compliance_scan` job → `scanner.run()`: for each active product: `keywordHits = prescreen(description)` → `assessment = llm.completeJson(classify_compliance)` (fast tier) → `verifyEvidenceSpan(assessment, description)` (must be a verbatim substring; else `status='needs_review'`) → upsert `compliance_flags` → run row updated → `bus.publish('compliance.flag')`.
+`POST /api/v1/compliance/scan` → enqueue `compliance_scan` job → `scanner.run()`: for each active product: `keywordHits = prescreen(description)` → `assessment = llm.completeJson(classify_compliance)` (fast tier, description only) → `verifyEvidenceSpan(assessment, description)` (must be a case-sensitive substring; else `status='needs_review'`) → upsert `compliance_flags` (one per product/run) → run row updated → `bus.publish('compliance.flag')`. Model outages produce medium-risk keyword-only flags with `degraded_count` incremented; the six-hour cron is opt-in via `AEGIS_COMPLIANCE_CRON=true`.
 
 ## F10. Live updates [live — T8; planned T17]
 

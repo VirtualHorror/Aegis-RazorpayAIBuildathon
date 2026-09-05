@@ -11,6 +11,9 @@ import { createLlmClient } from './llm/factory';
 import { createEventBus } from './bus/event-bus';
 import { EventOrchestrator } from './orchestrator/EventOrchestrator';
 import { createModuleRegistry } from './orchestrator/registry';
+import { createComplianceScanHandler, startComplianceCron } from './compliance/worker';
+import { dunningRetryHandler } from './modules/subscription-salvager';
+import { negotiationExpiryHandler } from './modules/b2b-negotiator';
 
 /**
  * Process entry point.
@@ -78,12 +81,18 @@ async function main(): Promise<void> {
         logger: app.log,
         handlers: createRegistry({
           process_event: async (job, context) => processEventHandler(job, { ...context, orchestrator }),
+          compliance_scan: createComplianceScanHandler(llm, bus),
+          dunning_retry: async (job, context) => dunningRetryHandler(job, { ...context, orchestrator }),
+          negotiation_expiry: negotiationExpiryHandler,
         }),
         concurrency: config.WORKER_CONCURRENCY,
         pollIntervalMs: config.WORKER_POLL_MS,
       })
     : undefined;
   if (!worker) app.log.info('aegis worker disabled by AEGIS_WORKER_ENABLED=false');
+  const complianceCron = config.AEGIS_COMPLIANCE_CRON
+    ? startComplianceCron(pools.rw, app.log)
+    : undefined;
 
   const shutdown = async (signal: string): Promise<void> => {
     app.log.info({ signal }, 'shutting down');
@@ -92,6 +101,7 @@ async function main(): Promise<void> {
     timer.unref();
     await app.close();
     await worker?.stop();
+    complianceCron?.stop();
     await pools.end();
     process.exit(0);
   };
