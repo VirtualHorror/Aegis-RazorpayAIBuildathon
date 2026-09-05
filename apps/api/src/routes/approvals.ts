@@ -35,6 +35,17 @@ const GUARDRAIL_VALUES: Record<string, z.ZodType> = {
   x402_daily_cap_per_payer_paise: z.number().int().nonnegative().safe(),
 };
 
+/**
+ * Pagination cursor for `before=`.
+ * Intent: node-postgres returns timestamptz as `Date`; `String(date)` yields "Sat Sep 05 2026 …", which the list
+ *         routes' own `z.string().datetime()` validator rejects, so the second page could never be fetched (B-012).
+ * Flow: last row's timestamp -> ISO 8601 string the same route accepts -> null when the page was not full.
+ */
+function cursorOf(value: unknown): string | null {
+  if (value instanceof Date) return value.toISOString();
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
 export interface ApprovalRouteOptions { readonly db: pg.Pool; readonly orchestrator: EventOrchestrator; readonly bus?: EventBus }
 
 /**
@@ -70,7 +81,7 @@ export const approvalRoutes: FastifyPluginAsync<ApprovalRouteOptions> = async (a
     if (query.before) { values.push(query.before); predicates.push(`created_at < $${values.length}`); }
     values.push(query.limit);
     const result = await options.db.query(`SELECT id, idempotency_key, module, module_version, trigger_event_id, diagnosis_id, entity_type, entity_id, customer_id, kind, summary, proposal, bounds, money_impact_paise, expected_recovery_paise, requires_approval, status, reason, decided_by, decided_at, executed_at, result, created_at, updated_at FROM actions ${predicates.length > 0 ? `WHERE ${predicates.join(' AND ')}` : ''} ORDER BY created_at DESC, id DESC LIMIT $${values.length}`, values);
-    return { items: result.rows, next: result.rows.length === query.limit ? String(result.rows.at(-1)?.created_at ?? '') : null };
+    return { items: result.rows, next: result.rows.length === query.limit ? cursorOf(result.rows.at(-1)?.created_at) : null };
   });
 
   app.get('/api/v1/actions/:id', async (request, reply) => {
@@ -95,7 +106,7 @@ export const approvalRoutes: FastifyPluginAsync<ApprovalRouteOptions> = async (a
     if (query.before) { values.push(query.before); predicates.push(`received_at < $${values.length}`); }
     values.push(query.limit);
     const result = await options.db.query(`SELECT event_id, event_type, status, signature_valid, rzp_created_at, received_at, duplicate_count, processed_at, last_error FROM webhook_events ${predicates.length > 0 ? `WHERE ${predicates.join(' AND ')}` : ''} ORDER BY received_at DESC, event_id DESC LIMIT $${values.length}`, values);
-    return { items: result.rows, next: result.rows.length === query.limit ? String(result.rows.at(-1)?.received_at ?? '') : null };
+    return { items: result.rows, next: result.rows.length === query.limit ? cursorOf(result.rows.at(-1)?.received_at) : null };
   });
 
   app.get('/api/v1/events/:eventId', async (request, reply) => {
@@ -145,7 +156,7 @@ export const approvalRoutes: FastifyPluginAsync<ApprovalRouteOptions> = async (a
       const predicate = query.before ? 'WHERE created_at < $2' : '';
       if (query.before) values.push(query.before);
       const result = await options.db.query(`SELECT * FROM ${table} ${predicate} ORDER BY created_at DESC, id DESC LIMIT $1`, values);
-      return { items: result.rows, next: result.rows.length === query.limit ? String(result.rows.at(-1)?.created_at ?? '') : null };
+      return { items: result.rows, next: result.rows.length === query.limit ? cursorOf(result.rows.at(-1)?.created_at) : null };
     });
   }
 

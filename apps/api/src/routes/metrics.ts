@@ -47,12 +47,18 @@ export const metricsRoutes: FastifyPluginAsync<MetricsRouteOptions> = async (app
                 count(*) FILTER (WHERE action IN ('action.rejected', 'evidence.rejected')) AS rejected
          FROM audit_log WHERE true${time}`, since ? [since] : [],
       ),
+      // Intent: `calls` is the number of diagnoses, not the number of providers (B-013); the per-provider rollup is
+      //         kept for the by_provider map and summed back for the totals.
       options.db.query<{ calls: string; degraded: string; avg_latency: string | null; by_provider: Record<string, number> | null }>(
-        `SELECT count(*) AS calls,
-                count(*) FILTER (WHERE degraded) AS degraded,
-                avg(latency_ms)::float AS avg_latency,
+        `SELECT COALESCE(sum(provider_count), 0) AS calls,
+                COALESCE(sum(degraded_count), 0) AS degraded,
+                (sum(latency_sum) / NULLIF(sum(latency_count), 0))::float AS avg_latency,
                 COALESCE(jsonb_object_agg(provider, provider_count), '{}'::jsonb) AS by_provider
-         FROM (SELECT provider, count(*)::int AS provider_count, bool_or(degraded) AS degraded, avg(latency_ms)::float AS latency_ms
+         FROM (SELECT provider,
+                      count(*)::int AS provider_count,
+                      count(*) FILTER (WHERE degraded)::int AS degraded_count,
+                      COALESCE(sum(latency_ms), 0)::float AS latency_sum,
+                      count(latency_ms)::int AS latency_count
                FROM diagnoses WHERE true${time} GROUP BY provider) grouped`, since ? [since] : [],
       ),
     ]);

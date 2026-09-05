@@ -169,4 +169,65 @@ integration('T13 approvals and attribution', () => {
       await app.close();
     }
   });
+
+  it('returns an ISO cursor that the events and actions lists accept as `before` (B-012)', async () => {
+    for (const [index, offsetMinutes] of [[1, 3], [2, 2], [3, 1]] as const) {
+      const receivedAt = new Date(now.getTime() - offsetMinutes * 60_000);
+      await pool.query(
+        `INSERT INTO webhook_events (event_id, event_type, payload, payload_sha256, signature_valid, rzp_created_at, received_at, status)
+         VALUES ($1, 'payment.failed', '{"entity":"event","event":"payment.failed","contains":["payment"],"payload":{}}'::jsonb, $2, true, $3, $3, 'processed')`,
+        [`evt_cursor_${index}`, `sha-cursor-${index}`, receivedAt],
+      );
+    }
+    const orchestrator = new EventOrchestrator({ db: pool, llm: new StubLlmClient(), modules: [], now: () => now, logger });
+    const config = loadConfig({ DATABASE_URL: databaseUrl!, RAZORPAY_WEBHOOK_SECRET: 'test_webhook_secret_16', NODE_ENV: 'test' });
+    const app = await buildApp({ config, db: pool, probeDb: async () => ({ ok: true, latencyMs: 1 }), orchestrator, llm: new StubLlmClient(), logger: false });
+    try {
+      const first = await app.inject({ method: 'GET', url: '/api/v1/events?limit=2' });
+      expect(first.statusCode).toBe(200);
+      const page = first.json() as { items: { event_id: string }[]; next: string | null };
+      expect(page.items.map((row) => row.event_id)).toEqual(['evt_cursor_3', 'evt_cursor_2']);
+      expect(page.next).not.toBeNull();
+      expect(new Date(page.next!).toISOString()).toBe(page.next);
+      const second = await app.inject({ method: 'GET', url: `/api/v1/events?limit=2&before=${encodeURIComponent(page.next!)}` });
+      expect(second.statusCode).toBe(200);
+      const rest = second.json() as { items: { event_id: string }[]; next: string | null };
+      expect(rest.items.map((row) => row.event_id)).toEqual(['evt_cursor_1']);
+      expect(rest.next).toBeNull();
+      const actions = await app.inject({ method: 'GET', url: '/api/v1/actions?limit=1' });
+      expect(actions.statusCode).toBe(200);
+      expect((actions.json() as { next: string | null }).next).toBeNull();
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('counts model calls per diagnosis, not per provider (B-013)', async () => {
+    await pool.query(
+      `INSERT INTO webhook_events (event_id, event_type, payload, payload_sha256, signature_valid, rzp_created_at, status)
+       VALUES ('evt_llm_1', 'payment.failed', '{"entity":"event","event":"payment.failed","contains":["payment"],"payload":{}}'::jsonb, 'sha-llm-1', true, $1, 'processed')`,
+      [now],
+    );
+    const insert = (provider: string, degraded: boolean, latency: number | null) =>
+      pool.query(
+        `INSERT INTO diagnoses (event_id, entity_type, entity_id, hints, provider, model, prompt_version, input_digest, output, root_cause, confidence, strategy, rationale, degraded, latency_ms)
+         VALUES ('evt_llm_1', 'payment', 'pay_llm', '{}'::jsonb, $1, 'm', 'v1', 'digest', '{}'::jsonb, 'CARD_DECLINED', 0.9, 'RETRY_LINK', 'r', $2, $3)`,
+        [provider, degraded, latency],
+      );
+    await insert('openai', false, 100);
+    await insert('openai', false, 300);
+    await insert('fallback', true, null);
+    const orchestrator = new EventOrchestrator({ db: pool, llm: new StubLlmClient(), modules: [], now: () => now, logger });
+    const config = loadConfig({ DATABASE_URL: databaseUrl!, RAZORPAY_WEBHOOK_SECRET: 'test_webhook_secret_16', NODE_ENV: 'test' });
+    const app = await buildApp({ config, db: pool, probeDb: async () => ({ ok: true, latencyMs: 1 }), orchestrator, llm: new StubLlmClient(), logger: false });
+    try {
+      const response = await app.inject({ method: 'GET', url: '/api/v1/metrics/summary?window=all' });
+      expect(response.statusCode).toBe(200);
+      const llm = (response.json() as { llm: { calls: number; degraded: number; degraded_rate: number; avg_latency_ms: number; by_provider: Record<string, number> } }).llm;
+      expect(llm).toMatchObject({ calls: 3, degraded: 1, avg_latency_ms: 200, by_provider: { openai: 2, fallback: 1 } });
+      expect(llm.degraded_rate).toBeCloseTo(1 / 3, 5);
+    } finally {
+      await app.close();
+    }
+  });
 });

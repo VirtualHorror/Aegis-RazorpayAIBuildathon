@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { HalftoneField } from "@/components/fx/HalftoneField";
 import { Icon } from "@/components/ui/icons";
 import { MODULE_LABELS, moduleColorVar } from "@/lib/format";
 import { Logo } from "./Logo";
@@ -42,6 +43,9 @@ export function Sidebar() {
         </ul>
       </nav>
       <div className="px-3 pb-4 lg:px-4">
+        <div className="mb-3 hidden h-28 overflow-hidden rounded-lg opacity-40 sm:block lg:hidden">
+          <HalftoneField pitch={9} intensity={0.55} speed={0.5} />
+        </div>
         <SpectrumStrip />
         <p className="mt-2 hidden text-[11px] leading-4 text-fg-muted lg:block">One event stream in. Seven specialised, guard-railed modules out.</p>
       </div>

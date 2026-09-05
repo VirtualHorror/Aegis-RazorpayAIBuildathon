@@ -663,15 +663,15 @@ All arithmetic in integer paise with `Math.ceil` toward the merchant; unit tests
 
 ---
 
-### Task 18: Overview + Events pages
+### Task 18: Overview + Events pages — **DONE by Claude (2026-09-06)**
 
 **Files.** `app/page.tsx` (Overview), `app/events/page.tsx`, `components/overview/{KpiGrid,RecentActions,MoneyStrip,LlmHealth}.tsx`, `components/events/{EventFeed,EventRow,EventDrawer,EventFilters}.tsx`, `components/fx/HalftoneField.tsx` (per `Design.md §5.2` — build it now since Events needs it; the prism comes in T22, use a static `PrismPlaceholder` on the Overview until then).
 
 **Steps.**
-- [ ] 18.1 Overview: KPI tiles from `GET /api/v1/metrics/summary?window=24h` with window switcher; live increments via SSE (`event.received`, `action.executed`, `x402.settled`); "Run demo" button → `POST /api/v1/sim/run {scenario:'all'}` (dev only) with progress toast; recent actions list linking to `/actions/:id`.
-- [ ] 18.2 Events: server-rendered first page from `GET /api/v1/events`, SSE prepends new rows with the module-colour rail flash; columns: time, event id (mono, copy), type badge, signature ✓/✗, dup count (highlight > 0), status, latency; filters by type/status; drawer with raw JSON (`JsonView`), diagnoses and actions for the event; `HalftoneField` backdrop whose `intensity` pulses on new events; `aria-live="polite"`.
-- [ ] 18.3 Empty states are real (no fake rows). Mobile: card layout under 640px.
-- [ ] 18.4 Commit `feat(t18): overview and live events pages`.
+- [x] 18.1 Overview: KPI tiles from `GET /api/v1/metrics/summary?window=24h` with window switcher; live increments via SSE (`event.received`, `action.executed`, `x402.settled`); "Run demo" button → `POST /api/v1/sim/run {scenario:'all'}` (dev only) with progress toast; recent actions list linking to `/actions/:id`.
+- [x] 18.2 Events: server-rendered first page from `GET /api/v1/events`, SSE prepends new rows with the module-colour rail flash; columns: time, event id (mono, copy), type badge, signature ✓/✗, dup count (highlight > 0), status, latency; filters by type/status; drawer with raw JSON (`JsonView`), diagnoses and actions for the event; `HalftoneField` backdrop whose `intensity` pulses on new events; `aria-live="polite"`.
+- [x] 18.3 Empty states are real (no fake rows). Mobile: card layout under 640px.
+- [x] 18.4 Commit `feat(t18): overview and live events pages`.
 
 **Verify/Docs.** Chrome check by the Architect; `Bug-Feature.md` F-020.
 

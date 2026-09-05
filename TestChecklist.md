@@ -657,6 +657,30 @@ Chrome (claude-in-chrome, 1478px window, then a 360px same-origin iframe because
 
 Found and fixed during the check: KPI rupee amounts clipped at 28px in narrow tiles (now `clamp(18px, 11cqi, 28px)` with a container query); the Tab hint overlapped long placeholders (textarea gets right padding while the hint shows); a grid with an implicit `auto` track let the kitchen-sink table push the page wider than 360px (`grid-cols-1` = `minmax(0, 1fr)`); the textarea did not grow after a programmatic fill (`field-sizing: content`).
 
+### T18 — overview + events (observed 2026-09-06, Claude)
+
+```text
+$ pnpm --filter @aegis/web test
+ Test Files  5 passed (5)      Tests  22 passed (22)
+   # lib/events.test.ts (stream → row merge, paging, search), lib/overview.test.ts (counter bumps, recent list, module activity),
+   # components/fx/halftone.test.ts (field bounds, pinpoints at intensity 0, merged cells at 1, one cell per pitch square)
+$ pnpm --filter @aegis/web lint && pnpm --filter @aegis/web typecheck      # clean
+$ pnpm --filter @aegis/api exec vitest run test/approvals.integration.test.ts src/routes --no-file-parallelism --maxWorkers=1
+ Test Files  2 passed (2)      Tests  7 passed (7)                          # B-012 cursor paging, B-013 call counting
+$ curl -s 'localhost:4000/api/v1/metrics/summary?window=24h' | jq .llm
+{"calls":18,"degraded":18,"degraded_rate":1,"avg_latency_ms":0,"by_provider":{"fallback":18}}
+```
+
+Chrome (1478px window; 360px via same-origin iframe):
+
+- `/`: prism hero with the seven module rays and labels; KPI tiles, money strip, recent actions and model health rendered from `GET /api/v1/metrics/summary?window=24h` and `GET /api/v1/actions?limit=8`; window switcher 24 h / 7 days / All time refetches (content dims while pending).
+- Top-bar **Run demo** → `POST /api/v1/sim/run {scenario:'all'}` → toast "Demo sent 14 webhooks · 12 accepted, 0 duplicate, 1 rejected, 1 ignored · p95 18 ms". Within a second: `/events` prepended 14 rows ("just now", rail flash, `unverified:…` row with signature ✗), the listening panel's halftone pulsed to full intensity and decayed; `/` moved to 1,917 events, 6 executed, 15 blocked (`quiet_hours_local` at 01:40 IST), 21 proposed, recent actions filled with module badges, prism labels lit per module.
+- Event drawer: raw payload JSON with copy, diagnoses (root cause, strategy, confidence, provider, degraded badge), actions with links; Escape closes and returns focus.
+- Filters: type/status change the URL (`/events?type=…&status=…`) and re-render the first page on the server; the compact glow search narrows loaded rows client-side.
+- 360px: `/events` shows 50 cards (`ul.sm:hidden`), `/` stacks the hero copy above the picture; both `scrollWidth 342 ≤ innerWidth 357`.
+
+Found and fixed: relative times could read "in the future" because the shared 10 s clock lagged a fresh event (now "just now" for skews under a minute); the listening panel text was unreadable over the dots (gradient scrim); B-012 and B-013 above; `Date.now()` during render (React purity rule) replaced by `useNow()`.
+
 ## T23–T24 — demo + hardening (acceptance, pending)
 
 ```bash

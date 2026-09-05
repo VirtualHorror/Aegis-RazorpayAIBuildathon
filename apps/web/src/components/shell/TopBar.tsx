@@ -3,20 +3,20 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useStreamStatus } from "@/lib/sse";
-import { useSystemStatus } from "@/lib/system";
 import { EnvPill } from "./EnvPill";
 import { KillSwitchPill } from "./KillSwitchPill";
 import { LlmPill } from "./LlmPill";
 import { Logo } from "./Logo";
 import { RunDemoButton } from "./RunDemoButton";
 import { StreamPill } from "./StreamPill";
+import { useSystem } from "./SystemProvider";
 import { ThemeToggle } from "./ThemeToggle";
 import { pageTitle } from "./nav";
 
 /** Environment pill, LLM pill, kill-switch indicator, live-stream state, Run demo and the theme toggle (Design.md §3). */
 export function TopBar() {
   const pathname = usePathname();
-  const status = useSystemStatus();
+  const status = useSystem();
   const stream = useStreamStatus();
   const title = pageTitle(pathname);
 

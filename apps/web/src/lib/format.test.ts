@@ -17,6 +17,8 @@ describe("format", () => {
     expect(relativeTime("2026-09-06T04:00:00Z", now)).toBe("6h ago");
     expect(relativeTime("2026-09-05T04:00:00Z", now)).toBe("yesterday");
     expect(relativeTime("2026-09-01T04:00:00Z", now)).toBe("5d ago");
+    expect(relativeTime("2026-09-06T10:00:08Z", now)).toBe("just now");
+    expect(relativeTime("2026-09-06T10:05:00Z", now)).toBe("in the future");
     expect(relativeTime(null, now)).toBe("—");
     expect(relativeTime("not a date", now)).toBe("—");
   });

@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { BottomBar } from "./BottomBar";
 import { Sidebar } from "./Sidebar";
+import { SystemProvider } from "./SystemProvider";
 import { TopBar } from "./TopBar";
 
 /**
@@ -11,6 +12,7 @@ import { TopBar } from "./TopBar";
  */
 export function AppShell({ children, footer }: { children: ReactNode; footer: ReactNode }) {
   return (
+    <SystemProvider>
     <div className="flex min-h-dvh">
       <a
         href="#main"
@@ -28,5 +30,6 @@ export function AppShell({ children, footer }: { children: ReactNode; footer: Re
       </div>
       <BottomBar />
     </div>
+    </SystemProvider>
   );
 }

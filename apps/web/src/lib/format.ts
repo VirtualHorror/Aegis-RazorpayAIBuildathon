@@ -23,7 +23,8 @@ export function relativeTime(value: string | number | Date | null | undefined, n
   const time = value instanceof Date ? value.getTime() : new Date(value).getTime();
   if (!Number.isFinite(time)) return "—";
   const delta = now - time;
-  if (delta < 0) return "in the future";
+  // A shared clock ticks every 10 s, so a fresh event can sit a few seconds "ahead" of it: that is still "just now".
+  if (delta < -60_000) return "in the future";
   if (delta < 10_000) return "just now";
   if (delta < MINUTE) return `${Math.floor(delta / 1_000)}s ago`;
   if (delta < HOUR) return `${Math.floor(delta / MINUTE)}m ago`;
