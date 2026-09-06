@@ -794,11 +794,59 @@ Lighthouse (navigation mode):
 
 Found and fixed: B-018 (white on the dark-mode accent measured 3.13:1 — `/` scored 96 before the `--on-accent` token); the x402 stepper used `h3` under no `h2`, breaking heading order (`/x402` scored 99 before it became a paragraph); and five React purity/ref errors the linter caught in the renderers (refs are now written in effects, and the renderer choice comes from `useSyncExternalStore`).
 
-## T23–T24 — demo + hardening (acceptance, pending)
+## T23 — demo storyboard, README, video plan (verified 2026-09-06)
 
 ```bash
-pnpm demo                                    # runs the storyboard end-to-end in < 3 minutes, prints the metrics summary
-AEGIS_CHAOS=llm_down pnpm sim payment_failed_3ds   # diagnosis degraded=true, action still bounded and proposed
-pnpm test && pnpm typecheck && pnpm lint     # all green
+pnpm dev                                     # both servers must already be up; demo.sh starts nothing
+bash scripts/demo.sh                         # the storyboard, narrated
+bash scripts/demo.sh --fast --no-seed        # no pauses, keep current data
+bash scripts/demo.sh --allow-quiet-hours     # widen quiet_hours_local via the public API, restored on exit
+AEGIS_CHAOS=llm_down pnpm sim payment_failed_3ds_intl   # diagnosis degraded=true, action still bounded
+```
+
+Observed (2026-09-06): the run completes in **1:46**, under the three-minute budget, with every read-back scoped to
+the current run (B-021):
+
+```text
+ STEP  1/13 [0:02]  Reset the demo data          → guardrails back to ₹2,000 / 15% / quiet hours 21:00–08:00
+ STEP  2/13 [0:07]  Start the catalog scan       → 202 queued, 16 products, read back at step 11
+ STEP  3/13 [0:09]  3DS decline ×4               → totals accepted=1 duplicate=3
+ STEP  6/13 [0:22]  B2B invoice expires          → discount_offer: blocked · ₹21000.00 · daily_discount_budget_paise
+ STEP  7/13 [0:52]  Chargeback opened            → evidence_packet: pending_approval · ₹0.00
+ STEP  8/13 [1:13]  x402 purchase                → 402 challenge → 200 + X-PAYMENT-RESPONSE
+ STEP  9/13 [1:17]  Replay the same header       → 402 nonce_already_settled
+ STEP 10/13 [1:22]  Retry captured               → recovery action executed: whatsapp_cart_nudge, 79900 paise
+ STEP 13/13 [1:31]  AEGIS_CHAOS=llm_down         → diagnoses.degraded = t, provider = fallback, action still executed
+ Demo complete in 1:46.
+```
+
+Attribution, which had never once fired before this task (B-019):
+
+```text
+psql -c "select account, count(*), sum(credit_paise) from ledger_entries group by account"
+ recovered_revenue |  1 |  79900        ← first ever; rises 79 900 per run (159800 → 239700 → 319600)
+ x402_revenue      | 10 | 549000
+```
+
+Guardrail restored by the trap after `--allow-quiet-hours`:
+
+```text
+{"key":"quiet_hours_local","value":{"end":8,"start":21},"updated_by":"demo-script"}
+```
+
+New simulator surface (`apps/api/test/sim-cli.test.ts`, 11 tests, red-green proved):
+
+```bash
+pnpm sim --help                              # lists --order/--customer/--created-at and the AEGIS_CHAOS alias
+pnpm x402:buy prod_001 --payer probe --replay   # 402 → 200 (paymentResponse) → 402 nonce_already_settled
+```
+
+Artifacts: `scripts/demo.sh`, `README.md` (with "What Broke at 2 AM & How I Got Out"),
+`docs/video-storyboard.md`, `docs/architecture.svg`.
+
+## T24 — hardening (acceptance, pending)
+
+```bash
+pnpm test && pnpm typecheck && pnpm lint && pnpm --filter @aegis/web build   # all green
 git grep -nE 'sk-(ant|proj)|whsec_[A-Za-z0-9]{10,}' -- ':!*.md'   # no output (no secrets)
 ```

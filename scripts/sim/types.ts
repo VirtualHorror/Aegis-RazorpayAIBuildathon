@@ -37,6 +37,12 @@ export interface CliOptions {
   readonly seed: SimSeed;
   readonly apiUrl: string;
   readonly chaos: 'llm_down' | undefined;
+  /** Epoch seconds stamped on every fixture in the run; defaults to now so time-relative server rules see live input. */
+  readonly createdAt: number;
+  /** Pin the order id one scenario names, so a retry capture can be attributed to the failure it recovered. */
+  readonly orderId: string | undefined;
+  /** Pin the customer id one scenario names; `attributeRecovery` matches an executed action on it. */
+  readonly customerId: string | undefined;
 }
 
 export interface DbInspector {

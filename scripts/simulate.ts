@@ -24,9 +24,11 @@ async function main(): Promise<void> {
 
   console.log(`seed=${options.seed}`);
   console.log(`api=${options.apiUrl}`);
+  // Printed so a run can be replayed byte-for-byte with `--seed S --created-at T`; the default is the current second.
+  console.log(`created_at=${options.createdAt} (${new Date(options.createdAt * 1_000).toISOString()})`);
 
   const ids = createIdFactory(options.seed);
-  const scenarios = buildRequestedScenarios(options.scenario, options.burst, ids, options.contend);
+  const scenarios = buildRequestedScenarios(options, ids);
   const prepared = scenarios.map((scenario) => prepareScenario(scenario, secret, options.chaos));
   const inspector = createDbInspector();
   try {

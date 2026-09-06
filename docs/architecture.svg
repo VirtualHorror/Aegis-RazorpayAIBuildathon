@@ -1,0 +1,142 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1140 780" width="1140" height="780" role="img" aria-label="Aegis system map: signed webhook ingress, transactional outbox, worker, orchestrator, action modules, x402 gateway and dashboard">
+  <title>Aegis — system map</title>
+  <desc>Signed Razorpay webhooks enter an idempotent ingress that writes the event and its job in one transaction. A worker projects entities under a fixed lock order, the orchestrator diagnoses failures and proposes guard-railed actions, and everything is read back through a Next.js dashboard.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#475569"/>
+    </marker>
+    <style>
+      .bg    { fill: #ffffff; }
+      .card  { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.5; rx: 10; }
+      .api   { fill: #f1f5f9; stroke: #64748b; stroke-width: 2; rx: 14; }
+      .ai    { fill: #fdf2f8; stroke: #db2777; stroke-width: 1.5; rx: 10; }
+      .det   { fill: #ecfdf5; stroke: #059669; stroke-width: 1.5; rx: 10; }
+      .store { fill: #eff6ff; stroke: #2563eb; stroke-width: 1.5; rx: 10; }
+      .h     { font: 700 15px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; fill: #0f172a; }
+      .t     { font: 12.5px ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; fill: #334155; }
+      .s     { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; fill: #475569; }
+      .lbl   { font: 600 11px ui-sans-serif, system-ui, sans-serif; fill: #475569; }
+      .title { font: 700 20px ui-sans-serif, system-ui, sans-serif; fill: #0f172a; }
+      .flow  { stroke: #475569; stroke-width: 1.8; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1140" height="780"/>
+  <text class="title" x="28" y="38">Aegis — the agentic merchant OS for Razorpay</text>
+  <text class="t" x="28" y="60">Every box below is code that runs. Pink boxes are the only places a language model is allowed to speak.</text>
+
+  <!-- legend -->
+  <rect class="det" x="742" y="24" width="14" height="14"/>
+  <text class="lbl" x="762" y="36">deterministic</text>
+  <rect class="ai" x="862" y="24" width="14" height="14"/>
+  <text class="lbl" x="882" y="36">AI, bounded</text>
+  <rect class="store" x="982" y="24" width="14" height="14"/>
+  <text class="lbl" x="1002" y="36">durable state</text>
+
+  <!-- simulator -->
+  <rect class="card" x="28" y="86" width="250" height="86"/>
+  <text class="h" x="44" y="110">Simulator (Razorpay stand-in)</text>
+  <text class="s" x="44" y="130">scripts/simulate.ts</text>
+  <text class="t" x="44" y="150">14 signed scenarios · duplicates ·</text>
+  <text class="t" x="44" y="165">bursts · --chaos llm_down</text>
+
+  <path class="flow" d="M 278 129 L 356 129"/>
+  <text class="s" x="286" y="121">POST /webhooks/razorpay</text>
+  <text class="s" x="286" y="146">raw body + X-Razorpay-Signature</text>
+
+  <!-- API container -->
+  <rect class="api" x="356" y="86" width="756" height="470"/>
+  <text class="h" x="374" y="110">apps/api — Fastify + worker (port 4000)</text>
+
+  <!-- ingress -->
+  <rect class="det" x="374" y="124" width="342" height="106"/>
+  <text class="h" x="390" y="146">1 · Ingress</text>
+  <text class="t" x="390" y="166">HMAC-SHA256 over the raw bytes, timingSafeEqual</text>
+  <text class="t" x="390" y="184">idempotency key is claimed only by a verified</text>
+  <text class="t" x="390" y="200">delivery — a forged one keys into</text>
+  <text class="s" x="390" y="218">unverified:sha256(body)   (B-004)</text>
+
+  <!-- outbox -->
+  <rect class="det" x="736" y="124" width="358" height="106"/>
+  <text class="h" x="752" y="146">2 · Transactional outbox</text>
+  <text class="t" x="752" y="166">INSERT webhook_events + INSERT jobs in one</text>
+  <text class="t" x="752" y="184">transaction, then 200. A duplicate is answered</text>
+  <text class="s" x="752" y="202">200 {"status":"duplicate"}</text>
+  <text class="t" x="752" y="220">and counted — never re-processed.</text>
+
+  <path class="flow" d="M 716 177 L 734 177"/>
+
+  <!-- worker -->
+  <rect class="det" x="374" y="248" width="342" height="96"/>
+  <text class="h" x="390" y="270">3 · Worker (N loops)</text>
+  <text class="s" x="390" y="290">SELECT … FOR UPDATE SKIP LOCKED</text>
+  <text class="t" x="390" y="310">Projections take rows in one global order:</text>
+  <text class="s" x="390" y="328">dispute → payment → order → customer  (B-006/B-007)</text>
+
+  <!-- orchestrator -->
+  <rect class="det" x="736" y="248" width="358" height="96"/>
+  <text class="h" x="752" y="270">4 · Orchestrator</text>
+  <text class="t" x="752" y="290">project entity → route → diagnose → propose →</text>
+  <text class="t" x="752" y="308">evaluate every guardrail → persist the action row</text>
+  <text class="t" x="752" y="326">→ execute · pending_approval · blocked</text>
+
+  <path class="flow" d="M 716 296 L 734 296"/>
+  <path class="flow" d="M 545 232 L 545 246"/>
+
+  <!-- diagnostician -->
+  <rect class="ai" x="374" y="362" width="342" height="88"/>
+  <text class="h" x="390" y="384">5 · Diagnostician</text>
+  <text class="t" x="390" y="404">deterministic hints → model returns JSON →</text>
+  <text class="t" x="390" y="422">zod → cross-check → deterministic fallback</text>
+  <text class="s" x="390" y="440">degraded=true is recorded, never hidden</text>
+
+  <!-- modules -->
+  <rect class="det" x="736" y="362" width="358" height="88"/>
+  <text class="h" x="752" y="384">6 · Action modules (money is code)</text>
+  <text class="t" x="752" y="404">CheckoutRecovery · SubscriptionSalvager</text>
+  <text class="t" x="752" y="422">B2BNegotiator · ChargebackEvidence</text>
+  <text class="s" x="752" y="440">discount ≤ max_discount_pct, ≥ invoice floor</text>
+
+  <path class="flow" d="M 716 406 L 734 406"/>
+  <path class="flow" d="M 545 346 L 545 360"/>
+
+  <!-- side capabilities -->
+  <rect class="det" x="374" y="468" width="222" height="72"/>
+  <text class="h" x="390" y="490">x402 gateway</text>
+  <text class="t" x="390" y="509">402 challenge · single-use nonce</text>
+  <text class="t" x="390" y="526">per-request and per-payer caps</text>
+
+  <rect class="ai" x="608" y="468" width="222" height="72"/>
+  <text class="h" x="624" y="490">Ask Aegis (NL → SQL)</text>
+  <text class="t" x="624" y="509">model writes SQL → AST validator</text>
+  <text class="t" x="624" y="526">→ read-only role, 5s, LIMIT 200</text>
+
+  <rect class="ai" x="842" y="468" width="252" height="72"/>
+  <text class="h" x="858" y="490">Compliance scanner</text>
+  <text class="t" x="858" y="509">keyword pre-screen → model rubric</text>
+  <text class="t" x="858" y="526">→ evidence span verified verbatim</text>
+
+  <!-- postgres -->
+  <rect class="store" x="356" y="586" width="360" height="120"/>
+  <text class="h" x="374" y="610">PostgreSQL 16 (local, no Docker)</text>
+  <text class="t" x="374" y="632">webhook_events · jobs · payments · orders</text>
+  <text class="t" x="374" y="650">customers · subscriptions · invoices · disputes</text>
+  <text class="t" x="374" y="668">actions · audit_log · ledger_entries · guardrail_config</text>
+  <text class="s" x="374" y="690">roles: aegis (rw) · aegis_readonly (no PII columns)</text>
+
+  <!-- web -->
+  <rect class="card" x="752" y="586" width="342" height="120"/>
+  <text class="h" x="770" y="610">apps/web — Next.js 16 (port 3000)</text>
+  <text class="t" x="770" y="632">Overview · Events · Actions · Approvals</text>
+  <text class="t" x="770" y="650">Ask Aegis · Compliance · x402 Lab · Settings</text>
+  <text class="t" x="770" y="668">one SSE stream drives every live surface</text>
+  <text class="s" x="770" y="690">GET /api/v1/stream</text>
+
+  <path class="flow" d="M 536 556 L 536 584"/>
+  <text class="s" x="546" y="574">SQL</text>
+  <path class="flow" d="M 923 556 L 923 584"/>
+  <text class="s" x="933" y="574">JSON + SSE</text>
+
+  <text class="t" x="28" y="742">Nothing leaves the machine: WhatsApp sends, x402 settlement and Razorpay calls are simulated and labelled</text>
+  <text class="s" x="28" y="762">network: "aegis-sim" · status: "simulated_sent"</text>
+</svg>

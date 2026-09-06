@@ -732,15 +732,15 @@ All arithmetic in integer paise with `Math.ceil` toward the merchant; unit tests
 
 ---
 
-### Task 23: Demo storyboard, README, video plan
+### Task 23: Demo storyboard, README, video plan — **DONE by Claude (2026-09-06; B-019/B-020/B-021 found and fixed while building it)**
 
 **Files.** `scripts/demo.sh` (or `demo.ts`), `README.md` (rewrite), `docs/video-storyboard.md`, `docs/architecture.svg` (export of the system map — hand-drawn SVG is fine).
 
 **Steps.**
-- [ ] 23.1 `pnpm demo`: resets demo data (`db:seed`), starts nothing (assumes API+web running), then runs in order with short pauses and printed narration: `sim payment_failed_3ds_intl --dupes 3` → `sim payment_failed_cart_dropoff` → `sim subscription_halted` → `sim invoice_expired_b2b` → `sim dispute_created` → `x402:buy prod_001` → `x402:buy prod_001 --replay` → `sim payment_captured_after_retry` (attribution) → compliance scan → prints `GET /api/v1/metrics/summary`; then `AEGIS_CHAOS=llm_down sim payment_failed_3ds_intl` to show graceful degradation. Under 3 minutes.
-- [ ] 23.2 README: what/why, architecture diagram, 5-command quickstart (`bootstrap-system.sh` → `setup.sh` → `pnpm dev` → `pnpm demo` → open :3000), the AI boundary table, honest metrics section (including false positives: human rejection rate, degraded rate), "what broke at 2 AM" pulled from `Bug-Feature.md`, track mapping, what is simulated.
-- [ ] 23.3 Video storyboard: 5 minutes, shot list with timestamps matching `pnpm demo`.
-- [ ] 23.4 Commit `docs(t23): demo storyboard and readme`.
+- [x] 23.1 `pnpm demo`: resets demo data (`db:seed`), starts nothing (assumes API+web running), then runs in order with short pauses and printed narration: `sim payment_failed_3ds_intl --dupes 3` → `sim payment_failed_cart_dropoff` → `sim subscription_halted` → `sim invoice_expired_b2b` → `sim dispute_created` → `x402:buy prod_001` → `x402:buy prod_001 --replay` → `sim payment_captured_after_retry` (attribution) → compliance scan → prints `GET /api/v1/metrics/summary`; then `AEGIS_CHAOS=llm_down sim payment_failed_3ds_intl` to show graceful degradation. Under 3 minutes.
+- [x] 23.2 README: what/why, architecture diagram, 5-command quickstart (`bootstrap-system.sh` → `setup.sh` → `pnpm dev` → `pnpm demo` → open :3000), the AI boundary table, honest metrics section (including false positives: human rejection rate, degraded rate), "what broke at 2 AM" pulled from `Bug-Feature.md`, track mapping, what is simulated.
+- [x] 23.3 Video storyboard: 5 minutes, shot list with timestamps matching `pnpm demo`.
+- [x] 23.4 Commit `docs(t23): demo storyboard and readme`.
 
 **Verify/Docs.** `TestChecklist.md §T23–T24`; `Bug-Feature.md` F-025.
 

@@ -393,3 +393,21 @@ The x402 buyer lives under `scripts/`, while its TypeScript runner is installed 
 **Context.** The dark-mode accent is a light blue (`#5b8dff`); white text on it measures 3.13:1, under the 4.5:1 that C-F6 requires (B-018).
 **Choice.** `--on-accent` is white in light mode and `#0b1020` in dark mode; every accent-filled control uses it instead of a hardcoded white.
 **Consequences.** Lighthouse accessibility reaches 100 with no failed audits on `/`, `/events`, `/approvals` and `/x402`, and a future accent change only needs its partner token checked, not every button.
+
+### D-072 · A live delivery carries a live timestamp (2026-09-06)
+
+**Context.** `scripts/sim/cli.ts` stamped every fixture with the frozen `DEFAULT_SIM_CREATED_AT` (`1_757_000_000` = 2025-09-04). Against a running API that dated every delivery about a year in the past. `attributeRecovery` requires `executed_at <= capturedAt` inside `attribution_window_hours`, so an action executed at wall-clock now could never be attributed to a simulated capture, and `money.recovered_paise` was structurally pinned at zero (B-019).
+**Choice.** The CLI defaults `createdAt` to the current second and prints it; `--created-at EPOCH` pins it when a run must be byte-reproducible. The frozen constant stays the default for direct builder calls, which is where unit fixtures need determinism.
+**Consequences.** Every time-relative server rule — attribution windows, 24-hour prior-failure counts, cooldowns — now sees the input a real webhook would carry. Unit tests that call the builders directly are unaffected because they pass their own `createdAt`; `apps/api/test/sim-cli.test.ts` pins both behaviours and was red-green proved against the old constant.
+
+### D-073 · The simulator can pin an entity, so a retry can be attributed (2026-09-06)
+
+**Context.** `attributeRecovery` matches an executed action by customer id, payment id or order id. A standalone `pnpm sim payment_captured_after_retry` invents fresh ids, matches nothing, and credits nothing — so the storyboard's own "(attribution)" step could not do what its name said. Only `buildAllScenarios` wired the linkage, and there the capture is delivered milliseconds after the failure, before any action has executed.
+**Choice.** `--order` / `--customer` pin the ids one scenario names. For `payment_captured_after_retry` they map onto `priorFailureOrderId` / `priorFailureCustomerId`, which also records the attribution metadata on the fixture. They are refused for `all` and for a burst, which own their ids deliberately.
+**Consequences.** `pnpm demo` fires the failure pinned to one customer, waits for the recovery action to actually reach `executed`, then delivers the capture — producing the first `recovered_revenue` ledger row this system has written. Ordering is now the demo's responsibility rather than a hidden race.
+
+### D-074 · The x402 client signs the terms it was quoted (2026-09-06)
+
+**Context.** `scripts/x402-buy.ts` never loaded `.env` and built its signature from `process.env.X402_PAY_TO ?? 'merchant:aegis-demo'`. With a real `.env` (`X402_PAY_TO=merchant_aegis_demo`) the facilitator's `payload.payTo !== config.X402_PAY_TO` check rejected every purchase as `bad_signature` (B-020).
+**Choice.** Load the repo `.env` the way `simulate.ts` does, and take `payTo` from `accepts[0].payTo` in the 402 challenge, falling back to the environment only if the challenge omits it.
+**Consequences.** `pnpm x402:buy` works against any configured payee, and the client half of the flow now behaves the way an x402 client should: it signs the terms the server quoted rather than terms it assumed. The shared HMAC secret remains the one part that is inherently simulated (C-B7).
