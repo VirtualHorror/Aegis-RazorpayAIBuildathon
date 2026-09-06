@@ -176,6 +176,18 @@ export interface LlmJsonRequest<T> { purpose: LlmPurpose; system: string; user: 
 export interface LlmJsonResult<T> { data: T; provider: string; model: string; latencyMs: number; tokensIn: number; tokensOut: number; raw: string }
 export interface LlmClient { readonly provider: string; completeJson<T>(req: LlmJsonRequest<T>): Promise<LlmJsonResult<T>> }
 export class LlmUnavailableError extends Error {}   // callers MUST catch and fall back to deterministic rules
+
+// Sandbox / BYOK (T25) — apps/api/src/llm/{factory,byok}.ts, apps/api/src/sandbox/keys.ts, apps/api/src/routes/sandbox.ts
+export interface ByokCredential { readonly apiKey: string }                       // from header `x-aegis-llm-key`, never persisted or logged
+export function createLlmClient(config: LlmFactoryConfig, logger?: LlmFactoryLogger, byok?: ByokCredential): DescribedLlmClient;
+export function resolveByokProvider(config: Pick<LlmFactoryConfig, 'AEGIS_LLM_PROVIDER'>, apiKey: string): 'anthropic' | 'openai' | 'stub'; // explicit env wins; `stub` cannot be undone by a caller
+export interface ByokLlmResolver { clientFor(apiKey: string): LlmClient; remember(apiKey: string): string /* fingerprint */; byFingerprint(fingerprint: string): LlmClient | null }
+export function llmKeyFromHeaders(headers: IncomingHttpHeaders): string | null;   // one header, 20–512 printable ASCII, else null
+export function accountIdFromRawBody(raw: Buffer): string | null;                 // preliminary parse, `account_id` only, /^[A-Za-z0-9_-]{1,64}$/
+export function sandboxSecretKey(accountId: string): string;                      // `sandbox_secret_<account_id>`
+export function secretFingerprint(secret: string): string;                        // sha256 hex, first 12 chars — the only form a secret leaves the API in
+// POST /api/v1/sandbox/keys {account_id, webhook_secret (8–256 printable ASCII), actor?} → 200 {sandbox:{account_id, key, webhook_secret_fingerprint, updated_by, updated_at}}
+// Ingress: secretForDelivery(raw) → getSandboxSecret(db, account_id) ?? config.RAZORPAY_WEBHOOK_SECRET → verifySignature(raw, header, secret)
 ```
 
 ## 6. Database schema (PostgreSQL 16) — target state
@@ -203,7 +215,7 @@ Conventions: money is `bigint` **paise**; timestamps `timestamptz`; Razorpay ids
 | `compliance_flags` | flagged descriptions | `product_id`, `scan_run_id`, `keyword_hits` jsonb, `llm_assessment` jsonb, `risk_level` ∈ none/low/medium/high/prohibited, `category`, `evidence_span`, `recommendation`, `status` ∈ open/acknowledged/resolved/false_positive/needs_review` |
 | `x402_payments` | challenge → verify → settle | `nonce` UNIQUE, `resource`, `method`, `payer`, `amount_paise`, `asset`, `network`, `status` ∈ challenged/verified/settled/rejected/expired, `reject_reason`, `payment_payload` jsonb, `expires_at`, `settled_at` |
 | `nl_queries` | Text-to-SQL audit | `question`, `generated_sql`, `validated`, `validation_errors`, `executed`, `row_count`, `latency_ms`, `provider`, `model`, `degraded`, `summary`, `error` |
-| `guardrail_config` | editable bounds (seeded) | `key` PK, `value` jsonb, `description`, `updated_by`, `updated_at` |
+| `guardrail_config` | editable bounds (seeded); also the Sandbox / BYOK webhook secrets as `sandbox_secret_<account_id>` (T25) | `key` PK, `value` jsonb, `description`, `updated_by`, `updated_at`; RLS since 0005: non-owner roles never see `sandbox_secret_%` rows, `GET /api/v1/guardrails` filters them too |
 | `audit_log` | append-only human/system actions | `actor` (system / worker:<id> / ai:<provider>/<model> / human:<name>), `action`, `entity_type`, `entity_id`, `before`, `after`, `metadata` |
 
 **Guardrail defaults (seeded into `guardrail_config`)**
@@ -276,6 +288,7 @@ Next.js 16 App Router, Tailwind 4, `next-themes` (system default + manual toggle
 - Rate limit on ingress and x402 (`@fastify/rate-limit`), request-id on every log line, PII masked in logs and in `outbound_messages.recipient_masked`.
 - Kill switch (`guardrail_config.kill_switch`) blocks all money actions and the gateway.
 - Dev-only simulation routes are mounted only when `NODE_ENV !== 'production'`.
+- Sandbox / BYOK (T25): a tenant webhook secret is chosen by the `account_id` read from the unauthenticated body, which can only *select* a key, never grant access — a wrong or hostile id falls back to the `.env` secret and fails closed with 401. The secret leaves the database only for the HMAC; the API answers with a sha256 fingerprint, the settings route filters the rows, RLS hides them from `aegis_readonly`. A caller's model key rides in `x-aegis-llm-key` (redacted in logs), is validated before it can reach an HTTP client, goes to the provider that issued it (never the deployer's proxy), and is held in process memory only — a queued job carries its fingerprint.
 
 ## 12. What is simulated (and how honestly)
 

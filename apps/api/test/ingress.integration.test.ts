@@ -26,10 +26,10 @@ interface IngressResponse {
   error?: string;
 }
 
-function paymentBody(event = 'payment.failed'): string {
+function paymentBody(event = 'payment.failed', accountId = 'acc_test'): string {
   return JSON.stringify({
     entity: 'event',
-    account_id: 'acc_test',
+    account_id: accountId,
     event,
     contains: ['payment'],
     payload: {
@@ -276,5 +276,100 @@ integration('Razorpay webhook ingress', () => {
       payload: raw,
     });
     expect(invalidResponse.statusCode).toBe(401);
+  });
+
+  describe('sandbox / BYOK webhook secret (T25)', () => {
+    // Intent: a merchant in Live mode registers their own Razorpay webhook secret, keyed by the account id Razorpay
+    //         stamps on every delivery. The signature must be checked against that secret over the unaltered bytes.
+    // Flow: seed `guardrail_config.sandbox_secret_<account_id>` -> deliver signed with it -> accepted; deliver signed
+    //       with the `.env` secret -> 401, because the tenant secret replaces the default rather than joining it.
+    const sandboxAccount = 'acc_sandbox_1';
+    const sandboxSecret = 'whsec_tenant_one_secret';
+
+    beforeEach(async () => {
+      await pool.query("DELETE FROM guardrail_config WHERE key LIKE 'sandbox\\_secret\\_%'");
+      await pool.query(
+        `INSERT INTO guardrail_config (key, value, description, updated_by)
+         VALUES ($1, $2::jsonb, 'sandbox webhook secret', 'ingress-test')
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        [`sandbox_secret_${sandboxAccount}`, JSON.stringify(sandboxSecret)],
+      );
+    });
+
+    afterAll(async () => {
+      await pool.query("DELETE FROM guardrail_config WHERE key LIKE 'sandbox\\_secret\\_%'");
+    });
+
+    it('verifies the delivery against the secret registered for its account_id', async () => {
+      const body = paymentBody('payment.failed', sandboxAccount);
+      const response = await app.inject({
+        method: 'POST',
+        url: '/webhooks/razorpay',
+        headers: signedHeaders(body, 'evt_sandbox_ok', computeSignature(Buffer.from(body), sandboxSecret)),
+        payload: body,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json<IngressResponse>()).toMatchObject({ status: 'accepted', event_id: 'evt_sandbox_ok' });
+      const event = await pool.query<{ signature_valid: boolean; account_id: string; payload_sha256: string }>(
+        'SELECT signature_valid, account_id, payload_sha256 FROM webhook_events',
+      );
+      expect(event.rows[0]).toMatchObject({ signature_valid: true, account_id: sandboxAccount });
+      // C-D2: the HMAC covered the bytes we received, not a re-serialisation of them.
+      expect(event.rows[0]?.payload_sha256).toBe(createHash('sha256').update(Buffer.from(body)).digest('hex'));
+    });
+
+    it('rejects a sandbox account delivery signed with the .env secret', async () => {
+      const body = paymentBody('payment.failed', sandboxAccount);
+      const response = await app.inject({
+        method: 'POST',
+        url: '/webhooks/razorpay',
+        headers: signedHeaders(body, 'evt_sandbox_env_secret'),
+        payload: body,
+      });
+
+      expect(response.statusCode).toBe(401);
+      expect(response.json<IngressResponse>()).toEqual({ error: 'invalid_signature' });
+      const rows = await pool.query<{ event_id: string; status: string }>('SELECT event_id, status FROM webhook_events');
+      expect(rows.rows[0]?.event_id).toMatch(/^unverified:[a-f0-9]{64}$/);
+      expect(rows.rows[0]?.status).toBe('ignored');
+      expect((await pool.query('SELECT count(*)::int AS count FROM jobs')).rows[0].count).toBe(0);
+    });
+
+    it('falls back to the .env secret for an account with no registered sandbox secret', async () => {
+      const body = paymentBody('payment.failed', 'acc_without_sandbox');
+      const response = await app.inject({
+        method: 'POST',
+        url: '/webhooks/razorpay',
+        headers: signedHeaders(body, 'evt_sandbox_absent'),
+        payload: body,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json<IngressResponse>()).toMatchObject({ status: 'accepted', event_id: 'evt_sandbox_absent' });
+    });
+
+    it('keeps the .env secret when the body cannot name a usable account id', async () => {
+      // Intent: the lookup runs on unauthenticated bytes, so an unusable `account_id` must fail closed to the default
+      //         secret — never to "no secret" and never to a lookup with the caller's own string.
+      const body = JSON.stringify({
+        entity: 'event',
+        account_id: "acc_x'; DROP TABLE guardrail_config; --",
+        event: 'payment.failed',
+        contains: ['payment'],
+        payload: { payment: { entity: { entity: 'payment', id: 'pay_hostile_001', amount: 100, currency: 'INR', status: 'failed' } } },
+        created_at: 1_757_000_000,
+      });
+      const response = await app.inject({
+        method: 'POST',
+        url: '/webhooks/razorpay',
+        headers: signedHeaders(body, 'evt_sandbox_hostile'),
+        payload: body,
+      });
+
+      expect(response.statusCode).toBe(200);
+      expect(response.json<IngressResponse>()).toMatchObject({ status: 'accepted', event_id: 'evt_sandbox_hostile' });
+      expect((await pool.query('SELECT count(*)::int AS count FROM guardrail_config')).rows[0].count).toBeGreaterThan(0);
+    });
   });
 });

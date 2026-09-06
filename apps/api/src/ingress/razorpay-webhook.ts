@@ -7,6 +7,8 @@ import { reconcile, type ReconcileResult } from './reconciler';
 import { verifySignature } from './signature';
 import type pg from 'pg';
 import { runWithLlmChaos } from '../llm/resilient';
+import { getSandboxSecret } from '../db/repos/sandbox';
+import { accountIdFromRawBody } from '../sandbox/keys';
 
 export interface IngressEventNotification {
   eventId: string;
@@ -66,6 +68,38 @@ function hashBody(rawBody: Buffer): string {
  */
 function ingressKey(claimedEventId: string, sha256: string, signatureValid: boolean): string {
   return signatureValid ? claimedEventId : `unverified:${sha256}`;
+}
+
+/**
+ * Choose the secret this delivery is verified against (Sandbox / BYOK, T25).
+ * Intent: a merchant running Aegis against their own Razorpay account signs with *their* secret. Picking it requires
+ *         reading `account_id` out of bytes nobody has authenticated yet, which is safe only because the choice can
+ *         never grant access: naming another account merely selects a different key the caller still cannot forge, and
+ *         an unusable or unknown account falls back to the `.env` default. The registered secret *replaces* the
+ *         default rather than joining it, so a tenant's account cannot also be driven with the deployment secret.
+ * Flow: preliminary parse for `account_id` only (the result is discarded — the real parse runs on the same buffer
+ *       afterwards) -> look the row up -> fall back to `.env` on absence, on an unusable id, or on a database error.
+ */
+async function secretForDelivery(
+  request: FastifyRequest,
+  options: RazorpayWebhookHandlerOptions,
+  raw: Buffer,
+): Promise<{ secret: string; accountId: string | null; source: 'sandbox' | 'env' }> {
+  const fallback = { secret: options.config.RAZORPAY_WEBHOOK_SECRET, accountId: null, source: 'env' as const };
+  if (!options.db) return fallback;
+  const accountId = accountIdFromRawBody(raw);
+  if (accountId === null) return fallback;
+  try {
+    const secret = await getSandboxSecret(options.db, accountId);
+    return secret === null
+      ? { ...fallback, accountId }
+      : { secret, accountId, source: 'sandbox' };
+  } catch (error) {
+    // Intent: an unreadable config must not accept an unverified delivery. Falling back to the default secret makes a
+    //         tenant delivery fail closed with 401, which Razorpay retries, instead of skipping verification.
+    request.log.warn({ err: error, account_id: accountId }, 'sandbox webhook secret lookup failed; using the default secret');
+    return { ...fallback, accountId };
+  }
 }
 
 async function notify(
@@ -132,7 +166,9 @@ async function handleRazorpayWebhookInContext(
   const raw = (request as RawBodyRequest).rawBody ?? Buffer.alloc(0);
   const sha256 = hashBody(raw);
   const signature = headerValue(request.headers['x-razorpay-signature']);
-  const signatureValid = verifySignature(raw, signature, options.config.RAZORPAY_WEBHOOK_SECRET);
+  const { secret, source: secretSource } = await secretForDelivery(request, options, raw);
+  // C-D2: `raw` is the untouched request buffer throughout; the tenant lookup above read a copy and changed nothing.
+  const signatureValid = verifySignature(raw, signature, secret);
   const eventIdHeader = headerValue(request.headers['x-razorpay-event-id']);
   const claimedEventId = eventIdHeader ?? `sha256:${sha256}`;
   const eventId = ingressKey(claimedEventId, sha256, signatureValid);
@@ -172,7 +208,7 @@ async function handleRazorpayWebhookInContext(
     // Intent: keep the rejected delivery auditable without letting it name a real event (see `ingressKey`).
     // Flow: log the id the caller claimed -> persist under the `unverified:` key -> 401 so Razorpay retries a genuine send.
     request.log.warn(
-      { event_id: eventId, claimed_event_id: claimedEventId, event_type: rawEventType },
+      { event_id: eventId, claimed_event_id: claimedEventId, event_type: rawEventType, secret_source: secretSource },
       'webhook signature verification failed',
     );
     await reconcileRejected(options, {

@@ -1,5 +1,6 @@
 import type { EventBus } from '../bus/event-bus';
 import type { LlmClient } from '../llm/client';
+import { llmForFingerprint, type ByokLlmResolver } from '../llm/byok';
 import { ComplianceScanner } from './scanner';
 import type { JobHandler } from '../worker/registry';
 import type pg from 'pg';
@@ -8,15 +9,22 @@ import { enqueue } from '../db/repos/jobs';
 
 const SIX_HOURS_MS = 6 * 60 * 60 * 1_000;
 
+export interface EnqueueComplianceScanOptions {
+  readonly runAt?: Date;
+  /** Sandbox / BYOK (T25): fingerprint of the caller's model key — never the key — for the worker to resolve. */
+  readonly llmKeyFingerprint?: string;
+}
+
 /** Queue one durable scan and its run row in the same transaction. */
-export async function enqueueComplianceScan(db: pg.Pool, runAt?: Date): Promise<string> {
+export async function enqueueComplianceScan(db: pg.Pool, options: EnqueueComplianceScanOptions = {}): Promise<string> {
   return withTransaction(db, async (tx) => {
     const inserted = await tx.query<{ id: string }>(
       `INSERT INTO compliance_scan_runs (status, started_at) VALUES ('running', now()) RETURNING id`,
     );
     const runId = inserted.rows[0]?.id;
     if (!runId) throw new Error('compliance scan run insert returned no id');
-    await enqueue(tx, { kind: 'compliance_scan', payload: { runId }, dedupeKey: `compliance_scan:${runId}`, runAt });
+    const payload = options.llmKeyFingerprint ? { runId, llmKeyFingerprint: options.llmKeyFingerprint } : { runId };
+    await enqueue(tx, { kind: 'compliance_scan', payload, dedupeKey: `compliance_scan:${runId}`, runAt: options.runAt });
     return runId;
   });
 }
@@ -57,10 +65,12 @@ export function startComplianceCron(
   };
 }
 
-export function createComplianceScanHandler(llm: LlmClient, bus?: EventBus): JobHandler {
+export function createComplianceScanHandler(llm: LlmClient, bus?: EventBus, byok?: ByokLlmResolver): JobHandler {
   return async (job, ctx) => {
     const runId = job.payload.runId;
     if (typeof runId !== 'string' || runId.length === 0) throw new Error('compliance_scan payload must contain runId');
-    await new ComplianceScanner({ db: ctx.db, llm, bus, logger: ctx.logger }).run(runId);
+    // A manual scan triggered in Live mode runs on the caller's key if this process still holds it (T25).
+    const scanLlm = llmForFingerprint(job.payload.llmKeyFingerprint, llm, byok);
+    await new ComplianceScanner({ db: ctx.db, llm: scanLlm, bus, logger: ctx.logger }).run(runId);
   };
 }

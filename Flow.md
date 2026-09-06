@@ -23,7 +23,10 @@ Migration commands (`src/db/migrate-cli.ts`) apply each SQL file in version orde
 POST /webhooks/razorpay
   src/ingress/razorpay-webhook.ts  handleRazorpayWebhook(req, reply, options)
    ├─ req.rawBody                       (custom content-type parser keeps raw bytes; src/ingress/raw-body.ts)
-   ├─ verifySignature(raw, headers['x-razorpay-signature'], config.RAZORPAY_WEBHOOK_SECRET)   src/ingress/signature.ts
+   ├─ secret = secretForDelivery(raw)   [T25] accountIdFromRawBody(raw) — a preliminary JSON.parse of the same bytes, used for nothing but the lookup
+   │     → getSandboxSecret(db, account_id) reads guardrail_config.sandbox_secret_<account_id>; a registered secret REPLACES the .env one,
+   │       an absent row / unusable id / db error falls back to config.RAZORPAY_WEBHOOK_SECRET (fails closed: a tenant delivery then gets 401 and is retried)
+   ├─ verifySignature(raw, headers['x-razorpay-signature'], secret)                         src/ingress/signature.ts
    │     HMAC-SHA256 hex → Buffer compare with crypto.timingSafeEqual; length mismatch → false
    ├─ invalid → reconcile(... status='ignored') → 401 {"error":"invalid_signature"}       (still persisted: status='ignored', signature_valid=false)
    │     keyed 'unverified:' + sha256(raw), NOT the caller's x-razorpay-event-id — an unsigned request must never
@@ -140,8 +143,8 @@ GET /x402/products/:id/spec   (routes.ts, wrapped by x402Middleware(priceFn))
 ## F8. Ask Aegis (Text-to-SQL + forecast) [live — T15]
 
 ```
-POST /api/v1/ask {question}
-  src/nlq/service.ts  ask(question)
+POST /api/v1/ask {question}            [T25] header x-aegis-llm-key → llmKeyFromHeaders → byok.clientFor(key): a request-scoped AskService
+  src/nlq/service.ts  ask(question)              bound to the caller's key (official provider endpoint, own breaker); no header → the boot client
    ├─ intent = classify(question)  (deterministic regex: /forecast|predict|next \d+ days/ → 'forecast' else 'query')
    ├─ query:   sql = llm.completeJson(text_to_sql, {schemaDoc})           src/nlq/schema-doc.ts (no PII columns)
    │           v = validate(sql)                                         src/nlq/validator.ts (pgsql-ast-parser: single SELECT, allowlist tables, denylist fns)
@@ -156,7 +159,7 @@ POST /api/v1/ask {question}
 
 ## F9. Compliance scan [live — T16]
 
-`POST /api/v1/compliance/scan` → enqueue `compliance_scan` job → `scanner.run()`: for each active product: `keywordHits = prescreen(description)` → `assessment = llm.completeJson(classify_compliance)` (fast tier, description only) → `verifyEvidenceSpan(assessment, description)` (must be a case-sensitive substring; else `status='needs_review'`) → upsert `compliance_flags` (one per product/run) → run row updated → `bus.publish('compliance.flag')`. Model outages produce medium-risk keyword-only flags with `degraded_count` incremented; the six-hour cron is opt-in via `AEGIS_COMPLIANCE_CRON=true`.
+`POST /api/v1/compliance/scan` → enqueue `compliance_scan` job (with `x-aegis-llm-key` present the payload carries `llmKeyFingerprint` — never the key — and `createComplianceScanHandler` resolves it through the in-process `ByokLlmRegistry`, falling back to the boot client, T25) → `scanner.run()`: for each active product: `keywordHits = prescreen(description)` → `assessment = llm.completeJson(classify_compliance)` (fast tier, description only) → `verifyEvidenceSpan(assessment, description)` (must be a case-sensitive substring; else `status='needs_review'`) → upsert `compliance_flags` (one per product/run) → run row updated → `bus.publish('compliance.flag')`. Model outages produce medium-risk keyword-only flags with `degraded_count` incremented; the six-hour cron is opt-in via `AEGIS_COMPLIANCE_CRON=true`.
 
 ## F10. Live updates [live — T8 (API), T17 (web)]
 
@@ -173,3 +176,26 @@ Two flags exist because a live delivery is not a unit fixture (D-072, D-073). Ev
 `pnpm demo` (`scripts/demo.sh`) runs the storyboard used in the video in about 1 min 45 s. It starts no servers: it checks `/health` and `/api/v1/system`, then drives the system only through interfaces a merchant has — the signed ingress, `pnpm x402:buy`, and the REST control plane. Order: seed → `POST /api/v1/compliance/scan` (202, 16 products, left running in the background and read at step 11) → `payment_failed_3ds_intl --dupes 3` → `payment_failed_cart_dropoff` pinned to this run's order/customer → `subscription_halted` → `invoice_expired_b2b` → `dispute_created` → `x402:buy prod_001` → `x402:buy prod_001 --replay` → wait for the pinned recovery action to reach `executed` → `payment_captured_after_retry` on the same ids → compliance flags → `GET /api/v1/metrics/summary` → `AEGIS_CHAOS=llm_down payment_failed_3ds_intl`.
 
 Three properties make it usable on stage. It **reads actions back** instead of asserting outcomes (`report_action` prints the real status, money impact and the bound that fired), and only accepts rows created after the run started, so a previous run's row can never be shown as this step's result (B-021). It **waits for the queue to drain** before printing the scoreboard, using `events.received` from the metrics summary as the queue depth the API already publishes. And `--allow-quiet-hours` widens `quiet_hours_local` to `{start:0,end:0}` through `PUT /api/v1/guardrails/quiet_hours_local` for a recording made inside the customer's 21:00–08:00 window — announced on screen, audited like any merchant edit, and restored by an `EXIT`/`INT`/`TERM` trap. Without it the demo reports the quiet-hours block honestly and says nothing could be attributed.
+
+## F12. Sandbox / BYOK mode [live — T25]
+
+```
+Browser                                                       API
+ SandboxPill (top bar) → SandboxModal  [Demo | Live]
+   Live: account id, webhook secret, OpenAI key
+   Save & go live
+     ├─ validateSandbox(draft)  (same rules as the route)
+     ├─ POST /api/v1/sandbox/keys {account_id, webhook_secret, actor}  ──►  routes/sandbox.ts
+     │                                                                        BEGIN
+     │                                                                          upsertSandboxSecret → guardrail_config(key='sandbox_secret_<account_id>', value=secret)
+     │                                                                          insertAuditLog(action='sandbox.keys_saved', entity_type='sandbox_key', metadata={fingerprint})
+     │                                                                        COMMIT → 200 {sandbox:{key, webhook_secret_fingerprint, …}}   (never the secret)
+     └─ only on 200: setSandbox(draft) → localStorage['aegis.sandbox']
+ every apiFetch while Live: headers['x-aegis-llm-key'] = llmKey   (Demo mode / server render: no header)
+ Forget keys: localStorage cleared → Demo (the API keeps the stored secret until it is rotated)
+
+Ingress: F2 picks the secret by account_id.  Ask: F8 binds the request to the caller's key.  Compliance: F9 carries the fingerprint.
+Isolation: GET /api/v1/guardrails filters `sandbox_secret_%`; migration 0005 enables RLS on guardrail_config so aegis_readonly
+(model-authored SQL) never sees those rows; the owner role bypasses RLS, so ingress and the route are unaffected.
+```
+

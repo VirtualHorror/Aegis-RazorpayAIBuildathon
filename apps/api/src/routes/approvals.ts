@@ -6,6 +6,7 @@ import type { EventOrchestrator } from '../orchestrator/EventOrchestrator';
 import { getAction } from '../db/repos/actions';
 import { insertAuditLog } from '../db/repos/audit';
 import { getEvidencePacket, updateEvidenceReview } from '../db/repos/evidence';
+import { SANDBOX_SECRET_LIKE } from '../db/repos/sandbox';
 import { withTransaction } from '../db/tx';
 
 const IdParams = z.object({ id: z.string().uuid() });
@@ -169,7 +170,13 @@ export const approvalRoutes: FastifyPluginAsync<ApprovalRouteOptions> = async (a
   }
 
   app.get('/api/v1/guardrails', async () => {
-    const result = await options.db.query(`SELECT key, value, description, updated_by, updated_at FROM guardrail_config ORDER BY key`);
+    // Intent: this route feeds the settings form, and `guardrail_config` also holds the Sandbox / BYOK webhook secrets
+    //         (T25). Those are credentials, not bounds: they are filtered out here so no secret is ever rendered in the
+    //         dashboard or returned to a browser (C-D3). 0005 hides them from the read-only role at the database level.
+    const result = await options.db.query(
+      `SELECT key, value, description, updated_by, updated_at FROM guardrail_config WHERE key NOT LIKE $1 ORDER BY key`,
+      [SANDBOX_SECRET_LIKE],
+    );
     return { items: result.rows };
   });
 

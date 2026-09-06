@@ -33,6 +33,7 @@ export type IconName =
   | "info"
   | "zap"
   | "radio"
+  | "key"
   | "prism";
 
 const ICONS: Record<IconName, ReactNode> = {
@@ -122,6 +123,12 @@ const ICONS: Record<IconName, ReactNode> = {
   ),
   refresh: <path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6" />,
   power: <path d="M12 3v9M6.3 6.3a8 8 0 1 0 11.4 0" />,
+  key: (
+    <>
+      <circle cx="7.5" cy="15.5" r="4.5" />
+      <path d="M10.7 12.3L21 2M18 5l3 3M15 8l3 3" />
+    </>
+  ),
   externalLink: <path d="M14 4h6v6M20 4l-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5" />,
   arrowLeft: <path d="M19 12H5M12 5l-7 7 7 7" />,
   info: (

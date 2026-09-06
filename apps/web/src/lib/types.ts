@@ -433,6 +433,25 @@ export interface SimRunResult {
   p95_latency_ms: number;
 }
 
+/** `POST /api/v1/sandbox/keys` (T25). */
+export interface SandboxKeysBody {
+  account_id: string;
+  webhook_secret: string;
+  actor: string;
+}
+
+export interface SandboxKeysResponse {
+  sandbox: {
+    account_id: string;
+    /** `sandbox_secret_<account_id>` — the guardrail_config row the webhook ingress reads. */
+    key: string;
+    /** First 12 hex characters of sha256(secret): enough to confirm which secret is live, never the secret. */
+    webhook_secret_fingerprint: string;
+    updated_by: string;
+    updated_at: string;
+  };
+}
+
 /** SSE payload shapes the pages rely on (published by apps/api; everything else is passed through as unknown). */
 export interface StreamPayloads {
   "event.received": { eventId: string; eventType?: string; status: string };

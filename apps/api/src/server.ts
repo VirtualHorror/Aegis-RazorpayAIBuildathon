@@ -8,6 +8,7 @@ import { createRegistry } from './worker/registry';
 import { processEventHandler } from './worker/process-event';
 import { startWorker } from './worker/job-runner';
 import { createLlmClient } from './llm/factory';
+import { ByokLlmRegistry } from './llm/byok';
 import { createEventBus } from './bus/event-bus';
 import { EventOrchestrator } from './orchestrator/EventOrchestrator';
 import { createModuleRegistry } from './orchestrator/registry';
@@ -30,6 +31,8 @@ async function main(): Promise<void> {
     appRef.current?.log.error({ err: error, pool }, 'idle database client error');
   });
   const llm = createLlmClient(config);
+  // Sandbox / BYOK (T25): one registry so a key remembered by a route is visible to the worker in this same process.
+  const byok = new ByokLlmRegistry({ config });
   const bus = createEventBus();
   const modules = createModuleRegistry({ disabled: config.AEGIS_MODULES_DISABLED, db: pools.rw, llm });
   // Intent: construct the orchestrator before route registration so the production approval endpoints use the same
@@ -57,6 +60,7 @@ async function main(): Promise<void> {
     llm,
     bus,
     orchestrator,
+    byok,
   });
   appRef.current = app;
 
@@ -81,7 +85,7 @@ async function main(): Promise<void> {
         logger: app.log,
         handlers: createRegistry({
           process_event: async (job, context) => processEventHandler(job, { ...context, orchestrator }),
-          compliance_scan: createComplianceScanHandler(llm, bus),
+          compliance_scan: createComplianceScanHandler(llm, bus, byok),
           dunning_retry: async (job, context) => dunningRetryHandler(job, { ...context, orchestrator }),
           negotiation_expiry: negotiationExpiryHandler,
         }),

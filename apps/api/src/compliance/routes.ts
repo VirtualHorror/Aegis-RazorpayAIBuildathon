@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { withTransaction } from '../db/tx';
 import { insertAuditLog } from '../db/repos/audit';
 import type pg from 'pg';
+import { llmKeyFromHeaders, type ByokLlmResolver } from '../llm/byok';
 import { enqueueComplianceScan } from './worker';
 
 const FlagQuerySchema = z.object({
@@ -16,12 +17,18 @@ const FlagDecisionSchema = z.object({
 
 export interface ComplianceRouteOptions {
   readonly db: pg.Pool;
+  /** Sandbox / BYOK (T25): a manual scan runs on the caller's key when the worker shares this process. */
+  readonly byok?: ByokLlmResolver;
 }
 
 /** Compliance scan control-plane routes. */
 export const complianceRoutes: FastifyPluginAsync<ComplianceRouteOptions> = async (app, options) => {
-  app.post('/api/v1/compliance/scan', async (_request, reply) => {
-    const run = await enqueueComplianceScan(options.db);
+  app.post('/api/v1/compliance/scan', async (request, reply) => {
+    // Intent: the scan is durable work, and a durable row must never hold a credential (C-D3). The key stays in the
+    //         in-process registry; the job carries only its fingerprint and the worker resolves it (or falls back).
+    const callerKey = options.byok ? llmKeyFromHeaders(request.headers) : null;
+    const llmKeyFingerprint = callerKey && options.byok ? options.byok.remember(callerKey) : undefined;
+    const run = await enqueueComplianceScan(options.db, { llmKeyFingerprint });
     return reply.code(202).send({ runId: run, status: 'queued' });
   });
 

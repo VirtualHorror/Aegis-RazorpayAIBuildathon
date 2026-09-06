@@ -13,6 +13,7 @@ import { simRoutes } from './routes/sim';
 import { systemRoutes } from './routes/system';
 import { createLlmClient } from './llm/factory';
 import type { LlmClient } from './llm/client';
+import { ByokLlmRegistry, type ByokLlmResolver } from './llm/byok';
 import { createEventBus, type EventBus } from './bus/event-bus';
 import { sseRoute } from './bus/sse-route';
 import type { EventOrchestrator } from './orchestrator/EventOrchestrator';
@@ -20,6 +21,7 @@ import { approvalRoutes } from './routes/approvals';
 import { metricsRoutes } from './routes/metrics';
 import { x402Routes } from './x402/routes';
 import { askRoutes } from './routes/ask';
+import { sandboxRoutes } from './routes/sandbox';
 import { complianceRoutes } from './compliance/routes';
 
 export interface AppDeps {
@@ -39,6 +41,12 @@ export interface AppDeps {
   /** Shared process-local bus used by ingress notifications, the orchestrator, and SSE clients. */
   bus?: EventBus;
   orchestrator?: EventOrchestrator;
+  /**
+   * Sandbox / BYOK (T25): resolves a caller's `x-aegis-llm-key` to a client bound to that key. `server.ts` shares one
+   * registry between the routes and the worker so a manual compliance scan can run on the key that triggered it;
+   * tests inject a fake, and the default builds a registry from `config`.
+   */
+  byok?: ByokLlmResolver;
 }
 
 /**
@@ -83,10 +91,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   await app.register(healthRoutes, { probeDb: deps.probeDb, version: AEGIS_VERSION });
   const llm = deps.llm ?? createLlmClient(config, app.log);
+  const byok = deps.byok ?? new ByokLlmRegistry({ config, logger: app.log });
   await app.register(systemRoutes, { llm, env: config.NODE_ENV, version: AEGIS_VERSION });
   if (deps.db) {
-    await app.register(askRoutes, { db: deps.db, readonlyDb: deps.readonlyDb, llm });
-    await app.register(complianceRoutes, { db: deps.db });
+    await app.register(askRoutes, { db: deps.db, readonlyDb: deps.readonlyDb, llm, byok });
+    await app.register(complianceRoutes, { db: deps.db, byok });
+    await app.register(sandboxRoutes, { db: deps.db });
     await app.register(x402Routes, { db: deps.db, config, bus });
     await app.register(metricsRoutes, { db: deps.db });
     // The bus is required here: a kill-switch change is published on it, and every dashboard listens (B-017, C-B5).
@@ -126,6 +136,7 @@ export const LOG_REDACT_PATHS = [
   'req.headers.authorization',
   'req.headers["x-razorpay-signature"]',
   'req.headers["x-payment"]',
+  'req.headers["x-aegis-llm-key"]',
   'email',
   'contact',
   'phone',

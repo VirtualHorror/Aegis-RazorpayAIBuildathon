@@ -26,6 +26,8 @@ import type {
   MetricsSummary,
   MetricsWindow,
   Paged,
+  SandboxKeysBody,
+  SandboxKeysResponse,
   SimRunResult,
   SubscriptionRow,
   SystemInfo,
@@ -34,6 +36,7 @@ import type {
   X402PaymentRow,
   X402Product,
 } from "./types";
+import { sandboxRequestHeaders } from "./sandbox";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
@@ -73,7 +76,10 @@ function isErrorBody(value: unknown): value is ApiErrorBody {
 }
 
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<ApiResult<T>> {
-  const headers: Record<string, string> = { accept: "application/json", ...options.headers };
+  // Sandbox / BYOK (T25): while Live mode is on in this browser, every call carries the merchant's own model key as
+  // `x-aegis-llm-key`; the API binds that request's model calls to it and stores nothing. Server-side renders and
+  // Demo mode contribute no headers here. Explicit per-call headers still win.
+  const headers: Record<string, string> = { accept: "application/json", ...sandboxRequestHeaders(), ...options.headers };
   if (options.body !== undefined) headers["content-type"] = "application/json";
   try {
     const response = await fetch(`${API_URL}${path}`, {
@@ -152,6 +158,11 @@ export const api = {
   subscriptions: (params: { limit?: number; before?: string } = {}) => apiFetch<Paged<SubscriptionRow>>(`/api/v1/subscriptions${query(params)}`),
   invoices: (params: { limit?: number; before?: string } = {}) => apiFetch<Paged<InvoiceRow>>(`/api/v1/invoices${query(params)}`),
   disputes: (params: { limit?: number; before?: string } = {}) => apiFetch<Paged<DisputeRow>>(`/api/v1/disputes${query(params)}`),
+  /**
+   * Sandbox / BYOK (T25): registers the merchant's Razorpay webhook secret for their account. The API answers with a
+   * fingerprint of what it stored and never returns the secret.
+   */
+  saveSandboxKeys: (body: SandboxKeysBody) => apiFetch<SandboxKeysResponse>("/api/v1/sandbox/keys", { method: "POST", body }),
   /** Development only: signs an X-PAYMENT header server-side so the facilitator secret never reaches the browser. */
   signX402: (body: { nonce: string; amount: string; payer?: string }) =>
     apiFetch<{ header: string; payload: Record<string, unknown> }>("/api/v1/sim/x402-sign", { method: "POST", body }),

@@ -35,6 +35,7 @@
 | 5 Observability | T15 T16 | Ask Aegis (Text-to-SQL + forecast), compliance scanner |
 | 6 Frontend | T17 T18 T19 T20 T21 T22 | the dashboard, flourishes |
 | 7 Ship | T23 T24 | demo storyboard, README, hardening |
+| 8 SaaS | T25 | Sandbox / BYOK mode: per-account webhook secret, caller model key, Demo ↔ Live modal |
 
 ---
 
@@ -755,3 +756,20 @@ All arithmetic in integer paise with `Math.ceil` toward the merchant; unit tests
 - [x] 24.4 Commit `chore(t24): hardening and release`.
 
 **Verify/Docs.** `TestChecklist.md §T23–T24`; `Bug-Feature.md` F-026; `Rollback.md` verified levels L0–L5 actually work (note evidence).
+
+---
+
+### Task 25: Sandbox / BYOK (Bring Your Own Keys) mode — **DONE by Claude (2026-09-06)**
+
+**Files.** `apps/web/src/lib/{sandbox,useSandbox,sandbox.test}.ts`, `apps/web/src/components/shell/{SandboxModal,SandboxPill}.tsx`, `apps/web/src/lib/{api,types}.ts`, `apps/web/src/components/ui/icons.tsx` (`key`), `apps/api/src/sandbox/{keys,keys.test}.ts`, `apps/api/src/db/repos/sandbox.ts`, `apps/api/src/routes/sandbox.ts`, `apps/api/src/llm/{factory,byok,byok.test}.ts`, `apps/api/src/ingress/razorpay-webhook.ts`, `apps/api/src/routes/{ask,approvals}.ts`, `apps/api/src/compliance/{routes,worker}.ts`, `apps/api/src/{app,server}.ts`, `apps/api/test/{ingress,sandbox,schema}.integration.test.ts`, `db/migrations/0005_sandbox_secret_isolation{,.down}.sql`.
+
+**Steps.**
+- [x] 25.1 Frontend: `SandboxModal` component accessible from the TopBar (`SandboxPill`), with a `[ Demo Mode ] / [ Live Mode ]` toggle; Live mode shows three inputs — Razorpay Account ID, Razorpay Webhook Secret, OpenAI API Key — saved in the browser's `localStorage` (`aegis.sandbox`).
+- [x] 25.2 Frontend: `apps/web/src/lib/api.ts` attaches the OpenAI key as `x-aegis-llm-key` to every outgoing request while Live mode is active; Save in the modal sends `POST /api/v1/sandbox/keys` with `account_id` and `webhook_secret`.
+- [x] 25.3 Backend: routes that call the LLM synchronously (`POST /api/v1/ask`) check `x-aegis-llm-key` and pass the key into `createLlmClient` so it overrides the `.env` default; a manual `POST /api/v1/compliance/scan` queues the key's fingerprint and the worker resolves it (`llm/byok.ts`).
+- [x] 25.4 Backend: `POST /api/v1/sandbox/keys` saves `webhook_secret` into `guardrail_config` as `sandbox_secret_<account_id>`; `ingress/razorpay-webhook.ts` does a preliminary `JSON.parse` of `rawBody` strictly to extract `account_id`, queries `sandbox_secret_<account_id>`, and runs `verifySignature` against the unadulterated `rawBody` with that secret or the `.env` default; a failed signature is still 401.
+- [x] 25.5 All existing ingress tests pass; tests for the custom-secret logic added; `SKIP LOCKED` and idempotency paths untouched.
+- [x] 25.6 Commit `feat(t25): saas sandbox mode`.
+
+**Verify/Docs.** `TestChecklist.md §T25`; `Bug-Feature.md` F-027, DV-013, DV-014, 2 AM log 22–23; `Decisions.md` D-077–D-079.
+

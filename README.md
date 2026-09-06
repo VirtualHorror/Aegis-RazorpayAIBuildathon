@@ -110,6 +110,18 @@ Same class as #4, and the reason both are in this list: **a green test suite tel
 
 ---
 
+## Bring your own keys (Sandbox / Live mode)
+
+Every page runs in **Demo mode** by default: the simulator signs deliveries with the deployment's webhook secret and every model call uses the key in `.env`. The key-shaped pill in the top bar opens **Sandbox & keys**, where **Live mode** takes three values:
+
+| Value | Where it goes | What it does |
+|---|---|---|
+| Razorpay account id | `POST /api/v1/sandbox/keys` once, stored as `guardrail_config.sandbox_secret_<account_id>` | names the secret the ingress verifies that account's deliveries with |
+| Razorpay webhook secret | same request; never returned, only its fingerprint | `POST /webhooks/razorpay` reads `account_id` out of the raw bytes, looks the secret up, and runs the HMAC over the unaltered body with it (the `.env` secret is the fallback, not a second chance) |
+| OpenAI API key (optional) | this browser only; sent as `x-aegis-llm-key` on every request | Ask Aegis and a manual compliance scan run on your key against api.openai.com — never the deployment's proxy — with their own retry budget and breaker; a bad key degrades only your requests |
+
+The secret is invisible to the settings page and to the read-only role model-authored SQL runs as (row-level security, migration 0005). `AEGIS_LLM_PROVIDER=stub` still wins over a browser key, and the model id comes from `OPENAI_MODEL`, so a deployment pinned to a proxy-only model id needs a public one for Live mode to complete a call.
+
 ## The AI boundary
 
 The single design rule: **the model is allowed to read language and pick from a closed set. It is never allowed to compute a number or decide control flow.**

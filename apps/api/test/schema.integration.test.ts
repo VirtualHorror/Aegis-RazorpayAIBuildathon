@@ -73,7 +73,8 @@ integration('core schema migrations', () => {
 
   it('supports a full down/up round trip', async () => {
     // Intent: prove both down files are resolvable and leave the runner usable for a clean rebuild.
-    // Flow:   revert the newest migration -> projection guards -> grants -> core schema -> reapply all migrations.
+    // Flow:   revert the newest migration -> ledger uniqueness -> projection guards -> grants -> core schema -> reapply all migrations.
+    expect((await migrateDown(pool, MIGRATIONS_DIR, log)).reverted).toBe('0005_sandbox_secret_isolation');
     expect((await migrateDown(pool, MIGRATIONS_DIR, log)).reverted).toBe('0004_ledger_unique');
     expect((await migrateDown(pool, MIGRATIONS_DIR, log)).reverted).toBe('0003_projection_guards');
     expect((await migrateDown(pool, MIGRATIONS_DIR, log)).reverted).toBe('0002_readonly_grants');
@@ -85,7 +86,7 @@ integration('core schema migrations', () => {
     );
     expect(afterDown.rows).toHaveLength(0);
     const up = await migrateUp(pool, MIGRATIONS_DIR, log);
-    expect(up.applied).toEqual(['0001_init', '0002_readonly_grants', '0003_projection_guards', '0004_ledger_unique']);
+    expect(up.applied).toEqual(['0001_init', '0002_readonly_grants', '0003_projection_guards', '0004_ledger_unique', '0005_sandbox_secret_isolation']);
   });
 
   it('rejects checksum drift for an applied migration', async () => {

@@ -931,3 +931,48 @@ PUT {"value":false} → gateway settles again immediately, 200 + X-PAYMENT-RESPO
 pnpm test && pnpm typecheck && pnpm lint && pnpm --filter @aegis/web build
 git tag v1.0.0
 ```
+
+## T25 — sandbox / BYOK mode (verified 2026-09-06, Claude)
+
+Every new test was watched fail before its implementation existed (TDD): `keys.test.ts` (module missing), `factory.test.ts` BYOK block (4 failed / 2 passed), `byok.test.ts` (module missing, then `llmForFingerprint` 2 failed), `ingress.integration.test.ts` sandbox block (2 failed / 12 passed: tenant-signed delivery answered 401, `.env`-signed delivery answered 200), `sandbox.integration.test.ts` (5 failed with the route missing; then, with the route but before the guardrails filter and migration 0005, the two leak tests failed with `expected 13 to be 12` and `expected true to be false`), `sandbox.test.ts` (module missing), `schema.integration.test.ts` (`expected '0005_sandbox_secret_isolation' to be '0004_ledger_unique'`).
+
+```bash
+# focused
+pnpm --filter @aegis/api exec vitest run src/sandbox/keys.test.ts src/llm/byok.test.ts src/llm/factory.test.ts test/ingress.integration.test.ts test/sandbox.integration.test.ts --no-file-parallelism --maxWorkers=1
+# → keys 5, byok 7, factory 6, ingress 14 (10 original + 4 sandbox-secret), sandbox 10 — 5 files / 42 tests passed
+pnpm --filter @aegis/api exec vitest run test/schema.integration.test.ts --no-file-parallelism --maxWorkers=1   # → 5 passed (down/up round trip now walks 0005 → 0001 and back)
+pnpm --filter @aegis/web test                                                                                   # → 12 files / 48 tests (adds lib/sandbox.test.ts)
+pnpm --filter @aegis/web build                                                                                  # → ✓ Compiled successfully in 13.8s, exit 0 (B-024 is a bundler-only failure; this is the gate that sees it)
+pnpm typecheck && pnpm test && pnpm lint   # → typecheck green in all three projects; shared 5 files / 47 tests, web 12 / 48, api 52 / 264; lint green (exit 0)
+
+# migration (dev database)
+pnpm --filter @aegis/api db:migrate -- --status   # before: pending: 0005_sandbox_secret_isolation
+pnpm --filter @aegis/api db:migrate               # → applied 0005_sandbox_secret_isolation
+psql … -c "select rowsecurity from pg_tables where tablename='guardrail_config'"      # → t
+psql … -c "select policyname, cmd, qual from pg_policies where tablename='guardrail_config'"
+# → guardrail_config_hide_sandbox_secrets | SELECT | (key !~~ 'sandbox\_secret\_%'::text)
+
+# live API on port 4000 (tsx watch, dev database), secrets are throwaway test values
+curl -X POST localhost:4000/api/v1/sandbox/keys -d '{"account_id":"acc_LiveCurl1","webhook_secret":"whsec_curl_tenant_secret_1","actor":"human:curl"}'
+# → {"sandbox":{"account_id":"acc_LiveCurl1","key":"sandbox_secret_acc_LiveCurl1","webhook_secret_fingerprint":"961ed1f72616","updated_by":"human:curl",…}}
+# delivery for acc_LiveCurl1 signed with the tenant secret        → {"status":"accepted","event_id":"evt_livecurl_…","duplicate_count":0}
+# the same bytes signed with the .env secret                      → {"error":"invalid_signature"} http=401 (row keyed unverified:<sha256>, 0 jobs)
+curl localhost:4000/api/v1/guardrails | grep -c sandbox_secret    # → 0 (and 0 occurrences of the secret itself)
+psql … -c "select action, entity_type, entity_id, metadata from audit_log where action='sandbox.keys_saved'"
+# → sandbox.keys_saved | sandbox_key | sandbox_secret_acc_LiveCurl1 | {"account_id":"acc_LiveCurl1","webhook_secret_fingerprint":"961ed1f72616"}
+PGUSER=aegis_readonly psql … -c "select count(*) from guardrail_config where key like 'sandbox\_secret\_%'; select count(*) from guardrail_config"   # → 0 / 12
+# C-D3 grep over the diff: every `sk-`/`whsec_` hit is a test fixture (`sk-proj-caller`, `whsec_tenant_*`) or the README/Decisions prose; the only
+# `postgres://user:pw@` is the same placeholder the existing ingress test uses. No real credential. The test rows were deleted from the dev database afterwards.
+```
+
+**Chrome (2026-09-06, 1280×860 window → 1478×523 viewport, then a 360px iframe).**
+- Before the fixes: `/` was a Turbopack overlay (B-024); after the portal fix `[role=dialog]` measured `top 109 / bottom 414` in a 523px viewport (before: `top −124`, centred on the 56px header, B-025).
+- Top-bar pill `Demo mode` (accessible name `Demo mode, open sandbox settings`) opens the dialog; focus lands on the first radio; Escape and the backdrop close it.
+- Live mode reveals the three fields. Empty save → `Account id is required in Live mode.` and `Webhook secret is required in Live mode.` with `aria-invalid` on both and focus on the account field.
+- `acc_ChromeLive1` / a throwaway secret / a fake `sk-proj-…` key → `Save & go live` → toast `Live mode on for acc_ChromeLive1 · Webhook secret stored as sandbox_secret_acc_ChromeLive1 (fingerprint fd467aa991ac). Your model key is attached to every request from this browser.`; pill `Live · acc_ChromeLive1`; `localStorage.aegis.sandbox` holds mode/accountId/webhookSecret/llmKey; the row appeared in `guardrail_config` with `updated_by=human:dashboard`.
+- `/ask` "How many payments failed today?" in Live mode → `openai_AuthenticationError: 401 Invalid API key.`, card `degraded: written by rules, not the model`, HTTP 200; network log: `OPTIONS 204` + `POST 200` on `/api/v1/ask` and an `OPTIONS 204` on the history GET (the custom header forces a preflight; CORS reflects it). `nl_queries`: `provider=openai, degraded=t, executed=f, error=openai_AuthenticationError: 401…` — the key reached OpenAI, not the deployment's proxy.
+- Modal → Demo → Save → toast `Demo mode`, pill `Demo mode`, stored `mode:"demo"` with the values kept; the same question then `executed`, 1 row, 8.9 s, and the history GET had **no** preflight (no header sent). `nl_queries`: `degraded=f, executed=t, row_count=1`.
+- `Forget keys` → `localStorage.aegis.sandbox === null`, pill `Demo mode`, toast explains the API keeps the stored secret until rotated.
+- Light theme: dialog, radios, inputs and buttons readable (tokens only). Theme restored to `system` afterwards.
+- 360px iframe: `innerWidth 360`, `document.documentElement.scrollWidth 345` (was 454 with the label, B-025), pill 31px icon-only with `aria-label` `Live · acc_ChromeLive1, open sandbox settings`, dialog `left 0 / right 357` as a bottom sheet with all four fields, footer text present.
+
