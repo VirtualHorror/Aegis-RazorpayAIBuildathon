@@ -24,10 +24,26 @@ describe("prism shader", () => {
     const body = /struct Params \{([\s\S]*?)\n\}/.exec(source)?.[1];
     expect(body).toBeDefined();
     const declared = [...body!.matchAll(/^\s*([a-z0-9_]+)\s*:/gm)].map((match) => match[1]);
-    expect(declared).toEqual(["resolution_time"]);
-    const set = [...readFileSync(RENDERER, "utf8").matchAll(/params:\s*\{\s*([a-z0-9_]+):/g)].map((match) => match[1]);
-    expect(set.length).toBeGreaterThan(0);
-    expect([...new Set(set)]).toEqual(declared);
+    expect(declared).toEqual(["resolution_time", "pointer"]);
+    // Every `params: { … }` the renderer writes, flattened to the member names it sets.
+    const blocks = [...readFileSync(RENDERER, "utf8").matchAll(/params:\s*\{([^}]*)\}/g)].map((match) => match[1]!);
+    expect(blocks.length).toBeGreaterThan(0);
+    for (const block of blocks) {
+      const set = [...block.matchAll(/([a-z0-9_]+):/g)].map((match) => match[1]);
+      expect(set).toEqual(declared);
+    }
+  });
+
+  it("derives the pointer's steering limits from the physics instead of hard-coding an angle", () => {
+    const source = readFileSync(SHADER, "utf8");
+    // The floor of the range must come from the apex angle and the critical angle of the most-refracted wavelength,
+    // so a change to the geometry or the dispersion cannot quietly let the beam past total internal reflection.
+    expect(source).toContain("let apexAngle = acos(clamp(-dot(entryNormal, exitFaceNormal), -1.0, 1.0));");
+    expect(source).toContain("let criticalViolet = asin(clamp(1.0 / (N_RED + N_SPREAD), -1.0, 1.0));");
+    expect(source).toContain("asin(clamp(meanIndex * sin(apexAngle - criticalViolet), -1.0, 1.0))");
+    expect(source).toMatch(/clamp\(mix\(elevationMin, BEAM_ELEVATION_MAX, aim\.y\), elevationMin, BEAM_ELEVATION_MAX\)/);
+    // And the pointer itself is clamped before it is used for anything.
+    expect(source).toContain("let aim = clamp(pointer, vec2f(0.0), vec2f(1.0));");
   });
 
   it("keeps the scene in the shader: no ambient stage, one spectrum, dust lit only by the light field", () => {

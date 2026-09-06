@@ -65,17 +65,22 @@ The specification, in full:
 | Light | a single intense white volumetric ray entering from the side; an impact bloom where it meets the outer wall; the refracted ray crossing the glass; a caustic where it leaves the far wall |
 | Dispersion | on exit the ray becomes a wide continuous spectrum, red through violet, integrated over 48 wavelengths rather than drawn as discrete bands |
 | Dust | tiny drifting motes that emit nothing and are visible only where the light field reaches them |
+| Interaction | the pointer steers the beam: horizontally it slides where the beam lands on the entry face, vertically it sets the elevation. Mouse, pen and touch all arrive as pointer events; the beam eases toward the cursor with a 0.12 s time constant and glides back to rest when it leaves |
 | Display | Lottes tonemap, linear→sRGB, interleaved-gradient dither, a screen-edge fade on all four sides |
 
-Physics, because it dictates the composition: an equilateral prism deviates light by at least about 37°, so a shallow
-beam arriving from above meets the far wall past the critical angle, totally internally reflects, and produces no
-spectrum at all. The beam therefore rises at 24° (near minimum deviation), which leaves both internal angles near 28°
-— about 13° clear of the critical angle. That headroom is what the dispersion constant spends: `N_SPREAD = 0.30`
-opens a 16.7° fan with every wavelength still escaping, where real glass would give two or three degrees.
+Physics, because it dictates the composition and bounds the interaction: an equilateral prism deviates light by at
+least about 37°, so a shallow beam arriving from above meets the far wall past the critical angle, totally internally
+reflects, and produces no spectrum at all. Snell twice gives `r1 + r2 = A`, so the shallowest beam whose violet end
+still escapes satisfies `r1 > A − asin(1 / n_violet)`; with `A = 60°` and `n_violet = 1.80` that is `r1 > 26.25°`,
+an incidence of `46.87°`, an elevation of `16.87°`. The shader derives exactly that floor every frame from the
+apex angle and the indices, keeps `BEAM_MARGIN` (3.4°) in hand, and clamps the pointer between it and `BEAM_ELEVATION_MAX`
+(45.8°, short of grazing). Inside that window the fan runs from 21° wide at the shallow end to about 9° at the steep
+end and every wavelength gets out; outside it there would be no spectrum at all. `N_SPREAD = 0.30` is what opens the
+fan that far, where real glass would give two or three degrees.
 
 Implementation:
 - `components/prism/prism.wgsl` — the whole scene. One uniform (`resolution_time`: viewport, clock, device pixel ratio); everything else is derived from the viewport inside the shader.
-- `components/prism/renderer.ts` — the pipeline: `init()` → `surface()` sized explicitly → `effect()` → `compile()` against the surface's render signature → `frameLoop`. Structured after the official example's own `renderer.ts`.
+- `components/prism/renderer.ts` — the pipeline: `init()` → `surface()` sized explicitly → `effect()` → `compile()` against the surface's render signature → pointer listeners → `frameLoop`. Structured after the official example's own `renderer.ts`. It reports the pointer in 0..1 of the canvas and never computes an angle, so it cannot steer the beam anywhere the shader has not allowed.
 - `components/prism/PrismHero.tsx` — owns the canvas and its lifetime, nothing else.
 - `components/prism/prismShader.test.ts` — the shader resolves, declares one binding, and its struct members match what the renderer sets.
 

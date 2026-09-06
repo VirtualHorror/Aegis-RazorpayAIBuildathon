@@ -480,3 +480,21 @@ legend, and the accessible description is about light rather than about webhooks
 a black canvas inside the hero card instead of a drawn fallback — Safari before 17, Firefox without the flag, and any
 machine whose adapter is unavailable. The card's heading and the events/actions counters are HTML around the canvas
 and were left alone. Restoring either the fallback or the module rays is a revert of this entry.
+
+### D-084 · The pointer steers the beam, and the shader owns the limits (2026-09-07)
+
+**Context.** The replica was static; the reference hero sweeps with the cursor. Steering a refracted beam is not a
+free parameter: below a certain elevation the violet end of the spectrum passes the critical angle at the far wall and
+is trapped, so a naive `pointer → angle` mapping would let the user drag the rainbow out of existence.
+**Choice.** The renderer reports only where the pointer is, normalised to the canvas and eased with a 0.12 s time
+constant (mouse, pen and touch alike, resting mid-face when the pointer leaves). Every angle is computed in
+`prism.wgsl`, which derives the floor of the range from the geometry it already has — the apex angle between the two
+refracting faces, the critical angle of the most-refracted wavelength, and Snell at the entry face — keeps
+`BEAM_MARGIN` in hand, and clamps into `[elevationMin, BEAM_ELEVATION_MAX]`. Horizontally the pointer slides where the
+beam lands on the entry face, across a span checked to be safe at every elevation in the range. Because the direction
+is rebuilt from a clamped scalar rather than aimed at the cursor, no pointer position can produce a beam that travels
+the wrong way or fails to disperse.
+**Consequences.** The beam follows the cursor and the spectrum is guaranteed: rendering at all four pointer corners
+gives between 10 071 and 19 699 saturated pixels, never zero, which is the total-internal-reflection alarm. The limits
+move automatically if the prism's proportions or the dispersion constant change, and `prismShader.test.ts` fails if
+the derivation is replaced by a hard-coded angle.

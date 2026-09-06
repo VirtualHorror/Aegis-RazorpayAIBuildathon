@@ -12,6 +12,9 @@
 struct Params {
   // x, y: viewport in CSS pixels. z: seconds since start. w: device pixel ratio.
   resolution_time: vec4f,
+  // x, y: pointer over the canvas, 0..1 from the top left, already eased by the renderer and resting in the middle
+  // when the pointer is away. z: 1 while the pointer is over the canvas. w: unused.
+  pointer: vec4f,
 }
 
 @group(0) @binding(0) var<uniform> params: Params;
@@ -36,14 +39,19 @@ const DUST_SPECTRUM_STEPS: i32 = 8;
 /** Dust grid pitch in CSS pixels. */
 const DUST_CELL: f32 = 30.0;
 /**
- * Beam elevation, radians above horizontal, and where it lands on the entry face (0 = apex, 1 = left vertex).
- * Not a free choice: an equilateral prism deviates light by at least ~37 degrees, so a shallow beam arriving from
- * above meets the far wall past the critical angle and totally internally reflects — nothing exits and there is no
- * spectrum. Sitting near minimum deviation (about 24 degrees of elevation here) puts both internal angles near 28
- * degrees, some 13 degrees clear of the critical angle, which is the headroom the dispersion above spends.
+ * The pointer steers the beam, and the range it may steer over is derived, not chosen. Snell twice across a prism of
+ * apex angle A gives r1 + r2 = A, so a shallower beam means a smaller r1 and a larger r2 at the far wall; once r2
+ * passes the critical angle the light is trapped and there is no spectrum at all. The shallowest beam that still lets
+ * the violet end out therefore satisfies r1 > A - asin(1 / n_violet), which fixes the minimum angle of incidence and
+ * so the minimum elevation. `build_scene` computes that floor from the geometry and the indices every frame and
+ * clamps the pointer into it, keeping this margin in hand.
  */
-const BEAM_ELEVATION: f32 = 0.41888;
-const BEAM_ENTRY_U: f32 = 0.45;
+const BEAM_MARGIN: f32 = 0.06;
+/** Steepest the pointer may push the beam: 45.8 degrees of elevation, i.e. 75.8 degrees of incidence, short of grazing. */
+const BEAM_ELEVATION_MAX: f32 = 0.80;
+/** Where the beam may land on the entry face (0 = apex, 1 = left vertex); the pointer slides it along this span. */
+const BEAM_ENTRY_U_MIN: f32 = 0.30;
+const BEAM_ENTRY_U_MAX: f32 = 0.62;
 
 const LUMA = vec3f(0.2126, 0.7152, 0.0722);
 
@@ -177,7 +185,7 @@ struct Scene {
  * The whole scene from the viewport: an equilateral prism centre-right, and one ray refracted into it, across it and
  * out of its far face. Snell's law twice, with the exit taken per wavelength in the fan below.
  */
-fn build_scene(resolution: vec2f) -> Scene {
+fn build_scene(resolution: vec2f, pointer: vec2f) -> Scene {
   var s: Scene;
   s.size = min(resolution.y * 0.72, resolution.x * 0.34);
   let radius = s.size * 0.58;
@@ -190,13 +198,29 @@ fn build_scene(resolution: vec2f) -> Scene {
   // Seen slightly from the right and above, so the far face and the struts stand off the near face.
   s.depth = vec2f(s.size * 0.17, -s.size * 0.11);
 
-  s.entryHit = mix(s.apex, s.left, BEAM_ENTRY_U);
-  // Fixed elevation, and the origin projected back off-canvas along it, so the shaft always enters from outside.
-  s.entryDirection = vec2f(cos(-BEAM_ELEVATION), sin(-BEAM_ELEVATION));
-  s.entryOrigin = s.entryHit - s.entryDirection * length(resolution) * 1.2;
+  // The pointer slides where the beam lands: to the right is nearer the apex, which lifts the whole picture.
+  let aim = clamp(pointer, vec2f(0.0), vec2f(1.0));
+  s.entryHit = mix(s.apex, s.left, mix(BEAM_ENTRY_U_MAX, BEAM_ENTRY_U_MIN, aim.x));
 
   let entryNormal = outward_normal(s.apex, s.left, s.centroid);
   let meanIndex = N_RED + N_SPREAD * 0.5;
+
+  // The floor of the steering range, derived rather than tuned (see BEAM_MARGIN): the apex angle between the two
+  // refracting faces, the critical angle of the most-refracted wavelength, and Snell at the entry face give the
+  // shallowest beam whose violet end can still leave the far wall.
+  let exitFaceNormal = outward_normal(s.apex, s.right, s.centroid);
+  let apexAngle = acos(clamp(-dot(entryNormal, exitFaceNormal), -1.0, 1.0));
+  let criticalViolet = asin(clamp(1.0 / (N_RED + N_SPREAD), -1.0, 1.0));
+  let incidenceMin = asin(clamp(meanIndex * sin(apexAngle - criticalViolet), -1.0, 1.0));
+  // Incidence is elevation plus the tilt of the entry face's own normal, so the floor converts straight across.
+  let inwardNormalAngle = atan2(-entryNormal.y, -entryNormal.x);
+  let elevationMin = min(incidenceMin - inwardNormalAngle + BEAM_MARGIN, BEAM_ELEVATION_MAX);
+  // Pointer low steepens the beam, pointer high flattens it; either way it cannot leave the safe span.
+  let elevation = clamp(mix(elevationMin, BEAM_ELEVATION_MAX, aim.y), elevationMin, BEAM_ELEVATION_MAX);
+
+  // The origin is projected back off-canvas along the beam, so the shaft always enters from outside the frame.
+  s.entryDirection = vec2f(cos(-elevation), sin(-elevation));
+  s.entryOrigin = s.entryHit - s.entryDirection * length(resolution) * 1.2;
   s.insideDirection = refract(s.entryDirection, entryNormal, 1.0 / meanIndex);
   s.refracts = select(0.0, 1.0, dot(s.insideDirection, s.insideDirection) > 1e-6);
 
@@ -330,7 +354,7 @@ fn fs_main(@location(0) uv: vec2f) -> @location(0) vec4f {
   let time = params.resolution_time.z;
   let dpr = max(params.resolution_time.w, 0.5);
   let p = uv * resolution;
-  let s = build_scene(resolution);
+  let s = build_scene(resolution, params.pointer.xy);
 
   // The SDF gradient is a derivative: taken here, in uniform control flow, before any branch.
   let solid = sd_prism(p, s.apex, s.right, s.left, s.depth);
