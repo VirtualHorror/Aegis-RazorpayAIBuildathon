@@ -773,3 +773,8 @@ All arithmetic in integer paise with `Math.ceil` toward the merchant; unit tests
 
 **Verify/Docs.** `TestChecklist.md §T25`; `Bug-Feature.md` F-027, DV-013, DV-014, 2 AM log 22–23; `Decisions.md` D-077–D-079.
 
+---
+
+### Task 26: Control-plane authentication — **DECLINED for the MVP (2026-09-06, project owner)**
+
+Raised as F-028 by the T25 security review: authenticate every `/api/v1/*` write, derive `actor` from the principal, check tenant ownership of `account_id`. **Not built in this submission.** Documenting the trust boundary is the MVP-scope deliverable: `Architecture.md §11` states it, the README states it next to the Live-mode instructions, and the hosted instance (`deploy/`, D-081) is labelled an evaluator sandbox rather than a tenant boundary. Rationale and consequences: `Decisions.md` D-080. First task after the buildathon.

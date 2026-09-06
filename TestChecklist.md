@@ -976,3 +976,28 @@ PGUSER=aegis_readonly psql … -c "select count(*) from guardrail_config where k
 - Light theme: dialog, radios, inputs and buttons readable (tokens only). Theme restored to `system` afterwards.
 - 360px iframe: `innerWidth 360`, `document.documentElement.scrollWidth 345` (was 454 with the label, B-025), pill 31px icon-only with `aria-label` `Live · acc_ChromeLive1, open sandbox settings`, dialog `left 0 / right 357` as a bottom sheet with all four fields, footer text present.
 
+## Deploy — hosted instance (v1.1.0, 2026-09-06)
+
+Run from the production checkout after `deploy/README.md` steps 1–5. The first block needs no privileges and is what the agent verified before handing over the sudo step; the second needs nginx and the certificate in place.
+
+```bash
+pm2 ls                                                     # aegis-api and aegis-web both `online`
+curl -s http://127.0.0.1:4000/health                       # "status":"ok", "db":"ok", "version":"1.1.0"
+curl -s http://127.0.0.1:4000/api/v1/system                # "env":"development" (D-081), "version":"1.1.0"
+curl -sI http://127.0.0.1:3000/ | head -1                  # HTTP/1.1 200 OK
+grep -rl "api.aegis.nabhanyubm.tech" apps/web/.next/static | head -1   # the API URL was inlined at build time
+ss -ltnp | grep -E ':(3000|4000) '                         # both bound to 127.0.0.1 only
+```
+
+```bash
+sudo nginx -t                                              # syntax is ok / test is successful
+curl -s https://api.aegis.nabhanyubm.tech/health           # same body as above, over TLS
+curl -sI https://aegis.nabhanyubm.tech/ | head -1          # HTTP/2 200
+curl -sI http://aegis.nabhanyubm.tech/ | head -1           # HTTP/1.1 301 (certbot's redirect)
+curl -sI -H "Origin: https://aegis.nabhanyubm.tech" https://api.aegis.nabhanyubm.tech/api/v1/system | grep -i access-control-allow-origin
+                                                           # access-control-allow-origin: https://aegis.nabhanyubm.tech
+sudo certbot certificates                                  # one certificate, both names, expiry ~90 days out
+systemctl is-enabled pm2-nabhanyu                          # enabled (resurrects the `pm2 save` dump on boot)
+```
+
+Chrome: open https://aegis.nabhanyubm.tech — the top bar shows `development` and `v1.1.0`, Run demo completes, the Demo-mode pill opens the Sandbox dialog, and the API's log lines carry the client's address rather than 127.0.0.1 (`TRUST_PROXY=loopback`).

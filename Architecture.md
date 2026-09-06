@@ -100,6 +100,7 @@ Everything that moves money is **deterministic code**. The LLM is used only wher
 | Web | `pnpm --filter @aegis/web dev` | 3000 | calls API via `NEXT_PUBLIC_API_URL` |
 | PostgreSQL 16 | systemd `postgresql` | 5432 | local only, password auth on localhost |
 | Simulator | `pnpm sim <scenario>` | — | POSTs signed webhooks to the API |
+| Hosted instance | `pm2 start ecosystem.config.js` behind nginx + Let's Encrypt (`deploy/`) | 443 → 127.0.0.1:3000 / :4000 | `aegis.nabhanyubm.tech` → web, `api.aegis.nabhanyubm.tech` → API; `API_HOST=127.0.0.1`, `TRUST_PROXY=loopback` (D-081) |
 
 ## 5. Core interfaces (source of truth for Codex tasks)
 
@@ -289,6 +290,7 @@ Next.js 16 App Router, Tailwind 4, `next-themes` (system default + manual toggle
 - Kill switch (`guardrail_config.kill_switch`) blocks all money actions and the gateway.
 - Dev-only simulation routes are mounted only when `NODE_ENV !== 'production'`.
 - **Trust boundary (stated, not solved):** there is no authentication on the control plane. Every `/api/v1/*` write — guardrail edits, the kill switch, approvals, compliance decisions, and since T25 `POST /api/v1/sandbox/keys` — trusts whoever can reach port 4000 and records the body's `actor` as the decider. That matches a single-operator prototype behind CORS on a private host; it does not match a multi-tenant SaaS. T25 raises the stakes of that gap: rotating `sandbox_secret_<account_id>` lets the caller forge webhooks for that account (still bounded by guardrails and approvals, but processed). Before the API is exposed beyond a trusted network: authenticate every write route, derive `actor` from the authenticated principal instead of the body, and add a tenant-ownership check on `account_id` (F-028).
+- **Task 26 — global authentication — declined for the MVP (D-080).** We are **not** implementing authentication on the control plane in this submission; documenting the boundary above is the deliverable, on purpose. An auth layer is cross-cutting — principals and sessions, `actor` derived from the principal on every write route, tenant ownership of `account_id`, the dashboard's login and key handling — and one built under deadline, without the verification pass every other task got, would invite trust the code could not honour. A stated absence is safer than a half-verified gate. What the hosted instance (`aegis.nabhanyubm.tech`, D-081) relies on instead: TLS, a rate limit keyed by the real client (`TRUST_PROXY=loopback`), row-level security and fingerprints for stored secrets, model keys that never touch the database, simulation-only outbound (C-B7), and the README's instruction to use test-mode Razorpay accounts and revocable model keys. What it does not give: tenant isolation — anyone who reaches the API can edit a guardrail, decide an approval or rotate a stored secret. F-028 is the first post-MVP task.
 - Sandbox / BYOK (T25): a tenant webhook secret is chosen by the `account_id` read from the unauthenticated body, which can only *select* a key, never grant access — a wrong or hostile id falls back to the `.env` secret and fails closed with 401. The secret leaves the database only for the HMAC; the API answers with a sha256 fingerprint, the settings route filters the rows, RLS hides them from `aegis_readonly`. A caller's model key rides in `x-aegis-llm-key` (redacted in logs), is validated before it can reach an HTTP client, goes to the provider that issued it (never the deployer's proxy), and is held in process memory only — a queued job carries its fingerprint.
 
 ## 12. What is simulated (and how honestly)
@@ -321,4 +323,8 @@ Next.js 16 App Router, Tailwind 4, `next-themes` (system default + manual toggle
 | Task 14 — x402 gateway | **implemented and green by Codex** (server-issued nonce challenge, HMAC settlement, replay/cap/kill-switch guards, buyer CLI) |
 | Task 15 — Ask Aegis | **implemented and green by Codex** (AST-validated readonly SQL, durable query history, deterministic OLS+MA7 forecasts) |
 | Task 16 — compliance scanner | **implemented and green by Codex** (keyword prescreen, fast rubric classification, evidence verification, durable review flags) |
-| Everything else | planned; see `Checklist.md` and the Status column in `Bug-Feature.md` |
+| Tasks 17–22 — the web dashboard | **done by Claude** (D-062; `Checklist.md` T17–T22, `TestChecklist.md` §T17–T22, verified in Chrome) |
+| Tasks 23–24 — demo storyboard, README, hardening | **done by Claude**; `v1.0.0` tagged at T24 |
+| Task 25 — Sandbox / BYOK mode | **done by Claude** (F-027, D-077–D-079) |
+| Task 26 — control-plane authentication | **declined for the MVP** (D-080, F-028): the boundary is stated in §11, not solved |
+| Hosted instance | `v1.1.0` at `aegis.nabhanyubm.tech` / `api.aegis.nabhanyubm.tech` (D-081, `deploy/`) |

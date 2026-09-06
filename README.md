@@ -10,6 +10,22 @@ A merchant's Razorpay webhook stream is a list of things that went wrong: a 3DS 
 
 ---
 
+## 🔑 Sandbox / BYOK mode — try it live
+
+**Dashboard → https://aegis.nabhanyubm.tech · API → https://api.aegis.nabhanyubm.tech** (`/health` answers with the version).
+
+The hosted instance opens in **Demo mode**: deliveries are signed with the deployment's own webhook secret and model calls use the deployment's key, so the whole story runs with nothing from you — press **Run demo** in the top bar. To run it on *your* credentials, flip it to **Live mode**:
+
+1. Click the key-shaped **Demo mode** pill in the top bar; the **Sandbox mode** dialog opens.
+2. Choose **Live mode** and fill in
+   - **Razorpay account id** (`acc_…`) — the account whose webhooks you will point at Aegis;
+   - **Razorpay webhook secret** — the secret you set on that webhook in the Razorpay dashboard. It is stored server-side under your account id and never echoed back; the API answers with a sha256 fingerprint;
+   - **OpenAI API key** (optional) — kept in this browser only and sent as `x-aegis-llm-key`, so Ask Aegis and manual compliance scans run on your key, straight to api.openai.com, never through the deployment's proxy.
+3. **Save & go live.** The pill reads `Live · acc_…` and the browser remembers the mode.
+4. In the Razorpay dashboard, add a webhook for `https://api.aegis.nabhanyubm.tech/webhooks/razorpay` with that secret. Every delivery names its `account_id`; the ingress looks up *your* secret by it and verifies the HMAC over the raw bytes. An unknown account falls back to the deployment secret and fails closed with `401`.
+
+**Demo mode** switches back without losing what you typed; **Forget keys** clears the browser. Use a **test-mode** Razorpay account and a model key you can revoke: the hosted control plane has no login (Task 26, declined for the MVP — `D-080`), so it is a shared evaluator sandbox in which anyone who reaches the API can rotate a stored secret or decide an approval. Mechanics, storage and limits: [Bring your own keys](#bring-your-own-keys-sandbox--live-mode) below.
+
 ## The system
 
 ![Aegis system map](docs/architecture.svg)
@@ -120,7 +136,7 @@ Every page runs in **Demo mode** by default: the simulator signs deliveries with
 | Razorpay webhook secret | same request; never returned, only its fingerprint | `POST /webhooks/razorpay` reads `account_id` out of the raw bytes, looks the secret up, and runs the HMAC over the unaltered body with it (the `.env` secret is the fallback, not a second chance) |
 | OpenAI API key (optional) | this browser only; sent as `x-aegis-llm-key` on every request | Ask Aegis and a manual compliance scan run on your key against api.openai.com — never the deployment's proxy — with their own retry budget and breaker; a bad key degrades only your requests |
 
-The secret is invisible to the settings page and to the read-only role model-authored SQL runs as (row-level security, migration 0005). **The control plane itself is still unauthenticated** — like guardrail edits and approvals, this route trusts whoever can reach the API port — so keep the API on a private network until F-028 (authentication + tenant ownership) lands. `AEGIS_LLM_PROVIDER=stub` still wins over a browser key, and the model id comes from `OPENAI_MODEL`, so a deployment pinned to a proxy-only model id needs a public one for Live mode to complete a call.
+The secret is invisible to the settings page and to the read-only role model-authored SQL runs as (row-level security, migration 0005). **The control plane itself is unauthenticated, by decision** (Task 26 declined for the MVP, `D-080`; the boundary is stated in `Architecture.md §11`): like guardrail edits and approvals, this route trusts whoever can reach the API. The hosted instance is therefore a shared evaluator sandbox behind TLS and a per-client rate limit, not a tenant boundary — F-028 (authentication + tenant ownership of `account_id`) is the first post-MVP task. `AEGIS_LLM_PROVIDER=stub` still wins over a browser key, and the model id comes from `OPENAI_MODEL`, so a deployment pinned to a proxy-only model id needs a public one for Live mode to complete a call.
 
 ## The AI boundary
 
@@ -211,6 +227,7 @@ pnpm typecheck     # tsc --noEmit, strict, no `any` anywhere (C-E2)
 pnpm lint          # three projects, --max-warnings 0
 pnpm --filter @aegis/web build
 pnpm sim --help    # 14 signed scenarios, duplicates, bursts, --contend, --chaos
+curl -s https://api.aegis.nabhanyubm.tech/health   # the hosted API
 ```
 
 ## Repository map
@@ -220,8 +237,9 @@ pnpm sim --help    # 14 signed scenarios, duplicates, bursts, --contend, --chaos
 | `apps/api` | Fastify API + worker: ingress, orchestrator, modules, x402, NL query, compliance |
 | `apps/web` | Next.js 16 dashboard, 11 routes + a component kitchen sink |
 | `packages/shared` | domain enums, precedence rules, money helpers, Razorpay schemas, simulator fixtures |
-| `db/` | 4 SQL migrations (each with a `.down.sql`) + seed |
+| `db/` | 5 SQL migrations (each with a `.down.sql`) + seed |
 | `scripts/` | bootstrap, setup, simulator, x402 buyer, `demo.sh` |
+| `deploy/` + `ecosystem.config.js` | the hosted instance: PM2 process file, nginx site, the one sudo script (nginx + certbot + boot unit), runbook |
 | `Architecture.md` `Flow.md` `Decisions.md` `Constraints.md` `Design.md` | the design |
 | `Checklist.md` `TestChecklist.md` `Bug-Feature.md` `Rollback.md` | the process |
 | `AGENTS.md` `CLAUDE.md` | rules for the agents that built this |
