@@ -120,7 +120,7 @@ Every page runs in **Demo mode** by default: the simulator signs deliveries with
 | Razorpay webhook secret | same request; never returned, only its fingerprint | `POST /webhooks/razorpay` reads `account_id` out of the raw bytes, looks the secret up, and runs the HMAC over the unaltered body with it (the `.env` secret is the fallback, not a second chance) |
 | OpenAI API key (optional) | this browser only; sent as `x-aegis-llm-key` on every request | Ask Aegis and a manual compliance scan run on your key against api.openai.com — never the deployment's proxy — with their own retry budget and breaker; a bad key degrades only your requests |
 
-The secret is invisible to the settings page and to the read-only role model-authored SQL runs as (row-level security, migration 0005). `AEGIS_LLM_PROVIDER=stub` still wins over a browser key, and the model id comes from `OPENAI_MODEL`, so a deployment pinned to a proxy-only model id needs a public one for Live mode to complete a call.
+The secret is invisible to the settings page and to the read-only role model-authored SQL runs as (row-level security, migration 0005). **The control plane itself is still unauthenticated** — like guardrail edits and approvals, this route trusts whoever can reach the API port — so keep the API on a private network until F-028 (authentication + tenant ownership) lands. `AEGIS_LLM_PROVIDER=stub` still wins over a browser key, and the model id comes from `OPENAI_MODEL`, so a deployment pinned to a proxy-only model id needs a public one for Live mode to complete a call.
 
 ## The AI boundary
 
