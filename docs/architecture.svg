@@ -41,8 +41,25 @@
   <text class="t" x="44" y="165">bursts · --chaos llm_down</text>
 
   <path class="flow" d="M 278 129 L 356 129"/>
-  <text class="s" x="286" y="121">POST /webhooks/razorpay</text>
-  <text class="s" x="286" y="146">raw body + X-Razorpay-Signature</text>
+
+  <text class="lbl" x="28" y="204">Every delivery is</text>
+  <text class="s" x="28" y="224">POST /webhooks/razorpay</text>
+  <text class="s" x="28" y="242">X-Razorpay-Signature: HMAC-SHA256(raw)</text>
+  <text class="s" x="28" y="260">x-razorpay-event-id: evt_…</text>
+  <text class="t" x="28" y="288">signed over the exact bytes on the wire.</text>
+  <text class="t" x="28" y="306">Point a real Razorpay account at this</text>
+  <text class="t" x="28" y="324">endpoint and nothing downstream changes.</text>
+
+  <rect class="ai" x="28" y="356" width="250" height="184"/>
+  <text class="h" x="44" y="380">What the model may not do</text>
+  <text class="t" x="44" y="404">· compute a rupee, a rate or a date</text>
+  <text class="t" x="44" y="422">· choose what happens next</text>
+  <text class="t" x="44" y="440">· write customer-facing copy for a</text>
+  <text class="t" x="44" y="456">  regulated channel</text>
+  <text class="t" x="44" y="474">· be trusted without a cross-check</text>
+  <text class="t" x="44" y="492">· be required to be up</text>
+  <text class="t" x="44" y="510">· see an email, phone or full name</text>
+  <text class="s" x="44" y="530">C-A1 … C-A8, enforced in review</text>
 
   <!-- API container -->
   <rect class="api" x="356" y="86" width="756" height="470"/>
@@ -70,8 +87,9 @@
   <rect class="det" x="374" y="248" width="342" height="96"/>
   <text class="h" x="390" y="270">3 · Worker (N loops)</text>
   <text class="s" x="390" y="290">SELECT … FOR UPDATE SKIP LOCKED</text>
-  <text class="t" x="390" y="310">Projections take rows in one global order:</text>
-  <text class="s" x="390" y="328">dispute → payment → order → customer  (B-006/B-007)</text>
+  <text class="t" x="390" y="308">One global lock order, extended never inverted:</text>
+  <text class="s" x="390" y="326">dispute → payment → order → customer</text>
+  <text class="s" x="390" y="342">B-006 · B-007</text>
 
   <!-- orchestrator -->
   <rect class="det" x="736" y="248" width="358" height="96"/>
