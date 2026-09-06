@@ -6,9 +6,11 @@ import { FAN_MODULES, FAN_SPREAD, type PrismScene } from "./prismGeometry";
 
 export interface PrismUniforms {
   resolution_time: [number, number, number, number];
-  entry_exit: [number, number, number, number];
+  entry_beam: [number, number, number, number];
+  exit_fan: [number, number, number, number];
   apex_right: [number, number, number, number];
-  left_fan: [number, number, number, number];
+  left_scale: [number, number, number, number];
+  depth_extra: [number, number, number, number];
   activity_a: [number, number, number, number];
   activity_b: [number, number, number, number];
   color0: [number, number, number, number];
@@ -37,18 +39,24 @@ export interface PrismUniformInput {
   reducedMotion: boolean;
   /** Module key → 0..1 pulse. */
   activity: Readonly<Record<string, number>>;
+  /** Device pixel ratio the surface renders at; the shader sizes its thinnest lines and its dither with it. */
+  dpr?: number;
 }
 
 export function prismUniforms(input: PrismUniformInput): PrismUniforms {
   const { scene, width, height, timeSeconds, reducedMotion, activity } = input;
+  const dpr = input.dpr ?? 1;
   const centreAngle = scene.fanRays.length > 0 ? (scene.fanRays[0]!.angle + scene.fanRays.at(-1)!.angle) / 2 : 0;
   const pulses = FAN_MODULES.map((entry) => Math.max(0, Math.min(1, activity[entry.module] ?? 0)));
   const colors = FAN_MODULES.map((entry) => hexToRgba(entry.color));
   return {
     resolution_time: [width, height, timeSeconds, reducedMotion ? 1 : 0],
-    entry_exit: [scene.entry.to.x, scene.entry.to.y, scene.exitPoint.x, scene.exitPoint.y],
+    // The entry ray comes from the geometry, origin included: the shader must never re-derive the scene (B-026).
+    entry_beam: [scene.entry.from.x, scene.entry.from.y, scene.entry.to.x, scene.entry.to.y],
+    exit_fan: [scene.exitPoint.x, scene.exitPoint.y, centreAngle, FAN_SPREAD],
     apex_right: [scene.triangle[0].x, scene.triangle[0].y, scene.triangle[1].x, scene.triangle[1].y],
-    left_fan: [scene.triangle[2].x, scene.triangle[2].y, centreAngle, FAN_SPREAD],
+    left_scale: [scene.triangle[2].x, scene.triangle[2].y, dpr, scene.size],
+    depth_extra: [scene.depth.x, scene.depth.y, 0, 0],
     activity_a: [pulses[0] ?? 0, pulses[1] ?? 0, pulses[2] ?? 0, pulses[3] ?? 0],
     activity_b: [pulses[4] ?? 0, pulses[5] ?? 0, pulses[6] ?? 0, 0],
     color0: colors[0] ?? [1, 1, 1, 1],

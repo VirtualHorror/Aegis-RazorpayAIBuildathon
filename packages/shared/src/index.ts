@@ -2,7 +2,7 @@
  * @aegis/shared — the one package both the API and the dashboard import.
  * Keep it dependency-light (zod only): domain enums, precedence rules, money helpers, and (from Task 3) Razorpay webhook schemas.
  */
-export const AEGIS_VERSION = '1.1.0';
+export const AEGIS_VERSION = '1.1.1';
 
 export * from './money';
 export * from './domain/enums';

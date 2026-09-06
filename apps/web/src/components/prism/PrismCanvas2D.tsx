@@ -28,9 +28,10 @@ const STARS = Array.from({ length: 90 }, (_, index) => ({
 
 function drawScene(context: CanvasRenderingContext2D, scene: PrismScene, width: number, height: number, activity: Readonly<Record<string, number>>, now: number, still: boolean): void {
   context.clearRect(0, 0, width, height);
-  const background = context.createRadialGradient(width * 0.5, height * 0.5, 0, width * 0.5, height * 0.5, Math.max(width, height) * 0.7);
-  background.addColorStop(0, "#141a33");
-  background.addColorStop(1, "#070810");
+  const background = context.createRadialGradient(width * 0.52, height * 0.54, 0, width * 0.5, height * 0.5, Math.max(width, height) * 0.7);
+  // The same near-black stage the WGSL path paints, so switching renderers is not a change of scene (B-026).
+  background.addColorStop(0, "#0b1024");
+  background.addColorStop(1, "#03040a");
   context.fillStyle = background;
   context.fillRect(0, 0, width, height);
 
@@ -47,18 +48,38 @@ function drawScene(context: CanvasRenderingContext2D, scene: PrismScene, width: 
   // Additive from here: overlapping beams brighten instead of covering each other (Design.md §5.1).
   context.globalCompositeOperation = "lighter";
 
+  // The prism is a solid seen slightly from the side: back face and struts first, then the bright front face.
   const [apex, right, left] = scene.triangle;
-  context.beginPath();
-  context.moveTo(apex.x, apex.y);
-  context.lineTo(right.x, right.y);
-  context.lineTo(left.x, left.y);
-  context.closePath();
-  context.fillStyle = "rgba(120,140,200,0.05)";
+  const back = [apex, right, left].map((point) => ({ x: point.x + scene.depth.x, y: point.y + scene.depth.y }));
+  const outline = (points: readonly { x: number; y: number }[]) => {
+    context.beginPath();
+    context.moveTo(points[0]!.x, points[0]!.y);
+    for (const point of points.slice(1)) context.lineTo(point.x, point.y);
+    context.closePath();
+  };
+
+  outline([apex, right, left]);
+  context.fillStyle = "rgba(90,110,180,0.05)";
   context.fill();
+
+  context.lineWidth = 1;
+  context.strokeStyle = "rgba(150,170,220,0.34)";
+  context.shadowBlur = 6;
+  context.shadowColor = "rgba(150,180,255,0.35)";
+  outline(back);
+  context.stroke();
+  context.beginPath();
+  for (const [index, point] of [apex, right, left].entries()) {
+    context.moveTo(point.x, point.y);
+    context.lineTo(back[index]!.x, back[index]!.y);
+  }
+  context.stroke();
+
   context.lineWidth = 1.5;
-  context.strokeStyle = "rgba(232,234,242,0.75)";
+  context.strokeStyle = "rgba(232,234,242,0.8)";
   context.shadowBlur = 14;
   context.shadowColor = "rgba(180,200,255,0.55)";
+  outline([apex, right, left]);
   context.stroke();
 
   const line = (from: { x: number; y: number }, to: { x: number; y: number }, colour: string, lineWidth: number, blur: number) => {

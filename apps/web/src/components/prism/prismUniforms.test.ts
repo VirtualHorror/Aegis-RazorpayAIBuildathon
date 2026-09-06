@@ -20,8 +20,13 @@ describe("prism uniforms", () => {
       activity: { [FAN_MODULES[0]!.module]: 1, [FAN_MODULES[6]!.module]: 0.5, unknown_module: 1 },
     });
     expect(uniforms.resolution_time).toEqual([960, 280, 12.5, 1]);
-    expect(uniforms.entry_exit).toEqual([scene.entry.to.x, scene.entry.to.y, scene.exitPoint.x, scene.exitPoint.y]);
-    expect(uniforms.left_fan[3]).toBeCloseTo(FAN_SPREAD, 12);
+    // The whole entry ray, origin included: the shader must never re-derive a segment the geometry already owns.
+    expect(uniforms.entry_beam).toEqual([scene.entry.from.x, scene.entry.from.y, scene.entry.to.x, scene.entry.to.y]);
+    expect(uniforms.exit_fan[0]).toBe(scene.exitPoint.x);
+    expect(uniforms.exit_fan[1]).toBe(scene.exitPoint.y);
+    expect(uniforms.exit_fan[3]).toBeCloseTo(FAN_SPREAD, 12);
+    expect(uniforms.left_scale).toEqual([scene.triangle[2].x, scene.triangle[2].y, 1, scene.size]);
+    expect(uniforms.depth_extra).toEqual([scene.depth.x, scene.depth.y, 0, 0]);
     expect(uniforms.activity_a[0]).toBe(1);
     expect(uniforms.activity_b[2]).toBe(0.5);
     // The eighth slot is unused padding and must stay zero.
@@ -35,5 +40,12 @@ describe("prism uniforms", () => {
     expect(uniforms.activity_a[1]).toBe(1);
     expect(uniforms.activity_a[2]).toBe(0);
     expect(uniforms.resolution_time[3]).toBe(0);
+  });
+
+  it("passes the device pixel ratio through, defaulting to 1", () => {
+    const scene = prismGeometry({ width: 800, height: 300, pointer: null });
+    const base = { scene, width: 800, height: 300, timeSeconds: 0, reducedMotion: false, activity: {} };
+    expect(prismUniforms(base).left_scale[2]).toBe(1);
+    expect(prismUniforms({ ...base, dpr: 2 }).left_scale[2]).toBe(2);
   });
 });

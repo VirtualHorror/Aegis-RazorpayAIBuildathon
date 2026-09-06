@@ -982,8 +982,8 @@ Run from the production checkout after `deploy/README.md` steps 1–5. The first
 
 ```bash
 pm2 ls                                                     # aegis-api and aegis-web both `online`
-curl -s http://127.0.0.1:4000/health                       # "status":"ok", "db":"ok", "version":"1.1.0"
-curl -s http://127.0.0.1:4000/api/v1/system                # "env":"development" (D-081), "version":"1.1.0"
+curl -s http://127.0.0.1:4000/health                       # "status":"ok", "db":"ok", "version":"1.1.1"
+curl -s http://127.0.0.1:4000/api/v1/system                # "env":"development" (D-081), "version":"1.1.1"
 curl -sI http://127.0.0.1:3000/ | head -1                  # HTTP/1.1 200 OK
 grep -rl "api.aegis.nabhanyubm.tech" apps/web/.next/static | head -1   # the API URL was inlined at build time
 ss -ltnp | grep -E ':(3000|4000) '                         # both bound to 127.0.0.1 only
@@ -1000,4 +1000,29 @@ sudo certbot certificates                                  # one certificate, bo
 systemctl is-enabled pm2-nabhanyu                          # enabled (resurrects the `pm2 save` dump on boot)
 ```
 
-Chrome: open https://aegis.nabhanyubm.tech — the top bar shows `development` and `v1.1.0`, Run demo completes, the Demo-mode pill opens the Sandbox dialog, and the API's log lines carry the client's address rather than 127.0.0.1 (`TRUST_PROXY=loopback`).
+Chrome: open https://aegis.nabhanyubm.tech — the top bar shows `development` and `v1.1.1`, Run demo completes, the Demo-mode pill opens the Sandbox dialog, and the API's log lines carry the client's address rather than 127.0.0.1 (`TRUST_PROXY=loopback`).
+
+## Prism hero — WebGPU path (verified 2026-09-06, Claude)
+
+This machine has no GPU, so every check below either forces Chrome's software WebGPU or renders through vgpu's own
+software renderer. Both are the real WebGPU path; neither needs a graphics card.
+
+```bash
+pnpm --filter @aegis/web exec vgpu check src/components/prism/prism.wgsl   # validation ok, 0 diagnostics, one `params` binding
+pnpm --filter @aegis/web test                                              # 13 files / 52 tests (prismShader.test.ts pins the WGSL/uniform contract)
+pnpm typecheck && pnpm lint && pnpm --filter @aegis/web build              # all exit 0
+```
+
+Pixels, without a browser (`npx vgpu install-software-renderer` once, then a scratch project outside the repo so
+`@vgpu/adapter-node` stays denied here — D-069): resolve `prism.wgsl`, feed it `prismGeometry` + `prismUniforms`,
+render to a target and read it back. Before the rewrite: `mean 88.98 · max 229 · near-black 0.0000`. After:
+`mean 53.55 · max 255 · lit 0.69` — a black stage with a real highlight, which is the whole point of the change.
+
+Browser, both paths on the same production build (headless Chrome, `Page.captureScreenshot`):
+
+| Chrome flags | Expected | Observed |
+|---|---|---|
+| `--enable-unsafe-swiftshader …` (adapter available) | WebGPU path | hero canvas 990×289, live `webgpu` context, screenshot shows the solid prism, the dispersed beam and the seven-ray fan |
+| none (no usable adapter) | Canvas 2D fallback, for the right reason | `[aegis] no WebGPU device on this machine, using the Canvas 2D renderer: navigator.gpu.requestAdapter() returned null.`, 2D canvas draws the same scene |
+
+A regression to watch: a browser with a working adapter must never log the fallback line (B-026, B-027).

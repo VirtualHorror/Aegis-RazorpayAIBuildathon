@@ -35,6 +35,14 @@ export interface PrismScene {
   readonly fanRays: readonly FanRay[];
   /** Where the fan starts, i.e. the exit point on the right face. */
   readonly exitPoint: Point;
+  /** Triangle size in pixels: every glow radius in the renderers scales with it, so the picture is size-independent. */
+  readonly size: number;
+  /**
+   * Extrusion from the front face to the back face, in pixels. The hero is a solid glass prism seen slightly from the
+   * side (the vgpu reference hero), so both renderers draw the front triangle, the back triangle offset by this
+   * vector, and the three struts between them.
+   */
+  readonly depth: Point;
 }
 
 export interface PrismInput {
@@ -63,6 +71,9 @@ export const INDEX = 1.5;
 export const REST_ANGLE = (10 * Math.PI) / 180;
 /** How far the entry angle may swing with the pointer. */
 export const MAX_ANGLE = (26 * Math.PI) / 180;
+/** Front face to back face, as a fraction of the triangle size: the prism is seen from slightly right and above. */
+export const DEPTH_X = 0.16;
+export const DEPTH_Y = -0.1;
 
 export function clamp(value: number, min: number, max: number): number {
   return value < min ? min : value > max ? max : value;
@@ -131,5 +142,7 @@ export function prismGeometry(input: PrismInput): PrismScene {
   const exit: Segment = { from: exitPoint, to: fanRays[Math.floor(FAN_MODULES.length / 2)]?.to ?? exitPoint };
   const specular: Segment = { from: exitPoint, to: { x: width, y: exitPoint.y + Math.tan(centreAngle) * (width - exitPoint.x) } };
 
-  return { triangle: [apex, right, left], entry, internal, exit, specular, fanRays, exitPoint };
+  const depth: Point = { x: size * DEPTH_X, y: size * DEPTH_Y };
+
+  return { triangle: [apex, right, left], entry, internal, exit, specular, fanRays, exitPoint, size, depth };
 }

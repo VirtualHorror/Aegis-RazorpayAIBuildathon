@@ -64,4 +64,15 @@ describe("prism geometry", () => {
     expect(up.exitPoint.y).not.toBeCloseTo(down.exitPoint.y, 3);
     expect(up.fanRays[0]!.angle).toBeLessThan(down.fanRays[0]!.angle);
   });
+
+  it("gives the prism a body: a size every renderer scales with and an extrusion to the back face", () => {
+    const small = prismGeometry({ width: 480, height: 160, pointer: null });
+    const large = prismGeometry({ width: 1440, height: 480, pointer: null });
+    expect(small.size).toBeGreaterThan(0);
+    expect(large.size).toBeCloseTo(small.size * 3, 6);
+    // The extrusion is a fixed fraction of the size, so the prism keeps its proportions at any canvas size.
+    expect(small.depth.x / small.size).toBeCloseTo(large.depth.x / large.size, 12);
+    expect(small.depth.y).toBeLessThan(0);
+    expect(Math.hypot(small.depth.x, small.depth.y)).toBeLessThan(small.size);
+  });
 });

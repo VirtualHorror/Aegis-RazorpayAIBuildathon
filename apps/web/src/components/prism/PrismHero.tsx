@@ -29,15 +29,18 @@ const MODE: Mode = ((): Mode => {
 /**
  * Which renderer this browser gets. Read through `useSyncExternalStore` rather than an effect, so the server renders
  * "pending" (no canvas) and the client picks a path during hydration without a cascading setState.
+ *
+ * The only question asked here is whether the browser exposes WebGPU at all. Everything else that used to force the
+ * 2D path was a false positive (B-026): `prefers-reduced-motion` is a request to stop animating, not to stop using
+ * the GPU, and the shader already freezes itself on the `still` uniform. The honest test of a WebGPU device is
+ * asking for one, so the real decision is made by `PrismWebGPU`: if `init()` cannot get an adapter it calls
+ * `onUnsupported()` and the Canvas 2D renderer takes over.
  */
 const subscribeNoop = () => () => {};
 function detectRenderer(): "gpu" | "2d" {
   if (MODE === "2d") return "2d";
   if (MODE === "gpu") return "gpu";
-  const supported = typeof navigator !== "undefined" && "gpu" in navigator;
-  // Reduced motion gets the 2D path, which draws exactly one frame (C-F4).
-  const reduced = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  return supported && !reduced ? "gpu" : "2d";
+  return typeof navigator !== "undefined" && "gpu" in navigator ? "gpu" : "2d";
 }
 
 export function PrismHero({ activity, active, eventsIn, actionsOut }: PrismHeroProps) {
@@ -47,9 +50,9 @@ export function PrismHero({ activity, active, eventsIn, actionsOut }: PrismHeroP
   const renderer = unsupported ? "2d" : detected;
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-border bg-[#070810] text-[#e8eaf2]" style={{ colorScheme: "dark" }}>
+    <div className="relative overflow-hidden rounded-2xl border border-border bg-[#03040a] text-[#e8eaf2]" style={{ colorScheme: "dark" }}>
       {/* The beam sweeps under this copy, so it sits on its own soft scrim rather than fighting the light. */}
-      <div className="px-4 pt-4 sm:absolute sm:left-6 sm:top-5 sm:z-[1] sm:max-w-sm sm:rounded-xl sm:bg-[radial-gradient(120%_120%_at_0%_0%,rgba(7,8,16,0.92),rgba(7,8,16,0))] sm:p-3">
+      <div className="px-4 pt-4 sm:absolute sm:left-6 sm:top-5 sm:z-[1] sm:max-w-sm sm:rounded-xl sm:bg-[radial-gradient(120%_120%_at_0%_0%,rgba(3,4,10,0.94),rgba(3,4,10,0))] sm:p-3">
         <p className="text-lg font-semibold tracking-tight sm:text-xl">One stream in. Seven specialists out.</p>
         <p className="mt-1 max-w-sm text-xs text-[#8b93a7] sm:text-sm">Every action is proposed by code, bounded by guardrails and gated by a human when money is at stake.</p>
       </div>
@@ -59,6 +62,9 @@ export function PrismHero({ activity, active, eventsIn, actionsOut }: PrismHeroP
 
         {/* A legend in fan order rather than labels pinned to the rays: the fan sweeps with the pointer, so a fixed
             label would soon point at the wrong colour. Each entry lights up when its module produces an event. */}
+        {/* The fan now runs bright all the way to the right edge, so the legend gets the same scrim treatment the
+            heading has: without it the labels sit on top of a lit ray and lose their contrast (B-018). */}
+        <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-56 bg-[linear-gradient(to_left,rgba(3,4,10,0.92),rgba(3,4,10,0.62)_55%,rgba(3,4,10,0))] sm:block" aria-hidden />
         <ul className="pointer-events-none absolute inset-y-0 right-3 hidden flex-col justify-center gap-1 sm:flex" aria-hidden>
           {FAN_MODULES.map((entry) => {
             const lit = active.has(entry.module);
