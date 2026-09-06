@@ -746,12 +746,12 @@ All arithmetic in integer paise with `Math.ceil` toward the merchant; unit tests
 
 ---
 
-### Task 24: Hardening — security review, failure drills, final test pass
+### Task 24: Hardening — security review, failure drills, final test pass — **DONE by Claude (2026-09-06; B-022/B-023 found and fixed, Rollback L1 corrected)**
 
 **Steps.**
-- [ ] 24.1 Security pass against `Constraints.md §D`: grep for secrets, verify pino redaction, verify readonly grants, verify dev routes are not mounted in production (`NODE_ENV=production pnpm --filter @aegis/api start` → `POST /api/v1/sim/run` is 404), rate limits respond 429.
-- [ ] 24.2 Failure drills (record each in `Bug-Feature.md` 2 AM log with real output): LLM down (`AEGIS_CHAOS=llm_down`), Postgres restarted mid-run (`sudo systemctl restart postgresql` by the human) → API `/health` degraded then ok, worker resumes, no lost jobs; duplicate storm (`sim burst --n 200 --dupes 5`) → counts reconcile; kill switch flipped during the demo → actions blocked within one poll.
-- [ ] 24.3 `pnpm test && pnpm typecheck && pnpm lint && pnpm --filter @aegis/web build` green; tag `v1.0.0`.
-- [ ] 24.4 Commit `chore(t24): hardening and release`.
+- [x] 24.1 Security pass against `Constraints.md §D`: grep for secrets, verify pino redaction, verify readonly grants, verify dev routes are not mounted in production (`NODE_ENV=production pnpm --filter @aegis/api start` → `POST /api/v1/sim/run` is 404), rate limits respond 429.
+- [x] 24.2 Failure drills (record each in `Bug-Feature.md` 2 AM log with real output): LLM down (`AEGIS_CHAOS=llm_down`), Postgres restarted mid-run (`sudo systemctl restart postgresql` by the human) → API `/health` degraded then ok, worker resumes, no lost jobs; duplicate storm (`sim burst --n 200 --dupes 5`) → counts reconcile; kill switch flipped during the demo → actions blocked within one poll.
+- [x] 24.3 `pnpm test && pnpm typecheck && pnpm lint && pnpm --filter @aegis/web build` green; tag `v1.0.0`.
+- [x] 24.4 Commit `chore(t24): hardening and release`.
 
 **Verify/Docs.** `TestChecklist.md §T23–T24`; `Bug-Feature.md` F-026; `Rollback.md` verified levels L0–L5 actually work (note evidence).

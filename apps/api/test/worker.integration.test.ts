@@ -234,6 +234,27 @@ integration('worker queue and projections', () => {
     expect(lock.rows[0]).toEqual({ locked_by: null, locked_at: null });
   });
 
+  // B-022: a compliance scan makes one model call per active product and runs for minutes. Under the old flat
+  // two-minute lease the sweeper re-queued it mid-run, a second worker claimed the same scan, and `attempts` climbed
+  // past `max_attempts` while both copies called the model for every product.
+  it('does not sweep a long-running job kind that is still inside its own lease', async () => {
+    const longJob = await insertJob(pool, null, 'compliance_scan', 'lease-test:compliance');
+    const shortJob = await insertJob(pool, null, 'process_event', 'lease-test:short');
+    for (const id of [longJob, shortJob]) {
+      await pool.query("UPDATE jobs SET status = 'running', locked_by = 'busy-worker', locked_at = now() - interval '5 minutes' WHERE id = $1", [id]);
+    }
+    await expect(sweepStaleJobs(pool)).resolves.toBe(1);
+    expect(await jobState(pool, longJob)).toMatchObject({ status: 'running' });
+    expect(await jobState(pool, shortJob)).toMatchObject({ status: 'queued' });
+  });
+
+  it('still sweeps a long-running job once its longer lease has expired', async () => {
+    const jobId = await insertJob(pool, null, 'compliance_scan', 'lease-test:expired');
+    await pool.query("UPDATE jobs SET status = 'running', locked_by = 'crashed-worker', locked_at = now() - interval '25 minutes' WHERE id = $1", [jobId]);
+    await expect(sweepStaleJobs(pool)).resolves.toBe(1);
+    expect(await jobState(pool, jobId)).toMatchObject({ status: 'queued' });
+  });
+
   it('projects a duplicate event once when two workers claim duplicate jobs concurrently', async () => {
     const eventId = 'evt_duplicate_projection';
     const payload = webhookPayload(

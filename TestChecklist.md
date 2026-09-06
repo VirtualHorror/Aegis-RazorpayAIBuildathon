@@ -844,9 +844,90 @@ pnpm x402:buy prod_001 --payer probe --replay   # 402 → 200 (paymentResponse) 
 Artifacts: `scripts/demo.sh`, `README.md` (with "What Broke at 2 AM & How I Got Out"),
 `docs/video-storyboard.md`, `docs/architecture.svg`.
 
-## T24 — hardening (acceptance, pending)
+## T24 — hardening (verified 2026-09-06)
+
+### 24.1 Security pass against `Constraints.md` §D
+
+Every line re-verified against the running system, not the source alone.
+
+| Rule | Command | Result |
+|---|---|---|
+| **C-D1** no `===` on signatures | `grep -rn timingSafeEqual apps/api/src` | `ingress/signature.ts:13` and `x402/canonical.ts:15`, both length-checked then `timingSafeEqual`; no `===` comparison on any signature |
+| **C-D2** raw bytes | read `ingress/signature.ts` | `computeSignature(raw: Buffer, …)`; the ingress never re-serialises the body |
+| **C-D3** no secrets | `git grep -nE 'sk-(ant\|proj\|live)\|whsec_[A-Za-z0-9]{10,}\|xoxb-\|AKIA[0-9A-Z]{16}' -- ':!*.md'` | no matches. `git check-ignore .env` → `.gitignore:6`; `git log --all -- .env` → empty (never committed). Every `postgres://user:pass@` hit is a test placeholder (`pw`, `test`) |
+| **C-D4** PII redaction | `pnpm --filter @aegis/api exec vitest run test/app.test.ts` | **found a gap (B-023):** `card.number` was missing and a top-level `{ email }` would have logged in clear. `LOG_REDACT_PATHS` now covers every named field at both depths; 9 tests pass |
+| **C-D5** no dev routes in production | `NODE_ENV=production tsx src/server.ts` on :4111 | `POST /api/v1/sim/run` → **404**, `POST /api/v1/sim/x402-sign` → **404**; the same routes on the development instance → **200** / **400** |
+| **C-D6** no external BaaS | grep every `package.json` and all source for supabase/firebase/upstash/redis/bullmq/planetscale/mongodb | no dependency, no reference |
+| **C-D7** read-only role excludes PII | live probes as `aegis_readonly` | `select email from customers` → **`permission denied for table customers`**; `insert` → **`cannot execute INSERT in a read-only transaction`**; `select count(*) from customers` → 1711. Granted columns are `country, created_at, id, locale, opted_out, updated_at` only — `name`/`email`/`contact` are absent, as are `payments.email`/`contact`. Role config: `default_transaction_read_only=on, statement_timeout=5s, idle_in_transaction_session_timeout=10s` |
+| rate limit | 660 concurrent `GET /x402/catalog` | exactly `600 × 200` then `60 × 429`, with `x-ratelimit-limit: 600`, `x-ratelimit-remaining: 0`, `retry-after: 58` |
+
+### 24.2 Failure drills
+
+**LLM down.** `AEGIS_CHAOS=llm_down pnpm sim payment_failed_3ds_intl` (the env alias added in T23):
+
+```text
+diagnoses:  degraded = t, provider = fallback, strategy = RETRY_LINK_LOCALIZED
+actions:    whatsapp_retry_link | executed        ← still bounded, still audited (C-A4)
+```
+
+**Database connections severed with work in flight.** `sudo systemctl restart postgresql` is not available to the agent
+(DV-001: privileged steps belong to the human), so the closest equivalent was run instead: every API and worker
+connection terminated with `pg_terminate_backend` while **242 jobs were in flight**.
+
+```text
+terminated 6 backends
+/health immediately after   {"status":"ok","db":"ok","db_latency_ms":17}      ← pool healed, API never went down
+jobs before  queued 264 | running 4 | succeeded 2062   total 2330  dead_letter 0
+jobs after   queued 259 | running 4 | succeeded 2067   total 2330  dead_letter 0
+```
+
+No job lost, no job duplicated, work continued through the outage. **The accounting is what found B-022**: one row
+sat at `attempts=7` against its own `max_attempts=5`.
+
+**Duplicate storm — depth.** One event delivered 201 times:
+
+```text
+totals accepted=1 duplicate=200 rejected=0 ignored=0 rate_limited=0
+webhook_events: evt_0001_a9f580fe | received | signature_valid=t | duplicate_count=200
+jobs enqueued for it: 1                     ← counted, never re-processed (C-C2)
+```
+
+**Duplicate storm — breadth.** 80 distinct events × 5 duplicates on a clean instance against `aegis_test`:
+
+```text
+totals accepted=80 duplicate=220 rejected=0 ignored=0 rate_limited=180
+burst verification jobs=80/80 succeeded=80 max_attempts=1 contended=false
+aegis_test: 83 events | 220 duplicates | 83 processed | all jobs succeeded, max_attempts 1
+```
+
+The checklist's `--burst 200 --dupes 5` is 1 200 deliveries against a 600/minute limiter and 200 model calls; it was
+run first and failed closed on both counts, which is the simulator behaving correctly (2 AM log #21).
+
+**Kill switch (C-B5).** Flipped through the public API, then lifted:
+
+```text
+PUT /api/v1/guardrails/kill_switch {"value":true}  → updated_by t24-drill
+module action     whatsapp_retry_link | blocked | kill_switch
+  bounds row      {"rule":"kill_switch","limit":false,"actual":true,"pass":false,
+                   "note":"all action modules are disabled by the merchant"}
+x402 paid request 503 gateway_paused          ← the 402 price quote is still served (D-076)
+PUT {"value":false} → gateway settles again immediately, 200 + X-PAYMENT-RESPONSE
+```
+
+### `Rollback.md` levels L0–L5, verified
+
+| Level | Evidence |
+|---|---|
+| **L0** kill switch | the drill above: modules `blocked`, x402 `503 gateway_paused`, lifted in seconds |
+| **L1** disable one module | `createModuleRegistry({ disabled: 'b2b_negotiator' })` → `checkout_recovery, subscription_salvager, chargeback_evidence, noop`. **Rollback.md was wrong** and is corrected: the module is dropped at boot, so it writes no action row at all rather than a `module_disabled` reason |
+| **L2** pause the worker | `config.ts:33` `AEGIS_WORKER_ENABLED` default true; `server.ts:78` only starts the worker when it is true and logs `aegis worker disabled by AEGIS_WORKER_ENABLED=false`. The production probe ran five minutes with it false and claimed no job while 268 were queued |
+| **L3** stub the LLM | `AEGIS_LLM_PROVIDER=stub` → `provider=stub model=fixture-v1` |
+| **L4** revert a task's code | `git revert --no-commit task-22-done` applies cleanly (aborted immediately); per-task tags `task-01-done … task-23-done` all exist for `git checkout` |
+| **L5** revert a migration | on `aegis_test`: `db:migrate:down` → `reverted 0004_ledger_unique`, status `pending: 0004_ledger_unique`; `db:migrate` → `applied 0004_ledger_unique`, `pending: (none)` |
+
+### 24.3 Release gate
 
 ```bash
-pnpm test && pnpm typecheck && pnpm lint && pnpm --filter @aegis/web build   # all green
-git grep -nE 'sk-(ant|proj)|whsec_[A-Za-z0-9]{10,}' -- ':!*.md'   # no output (no secrets)
+pnpm test && pnpm typecheck && pnpm lint && pnpm --filter @aegis/web build
+git tag v1.0.0
 ```

@@ -411,3 +411,16 @@ The x402 buyer lives under `scripts/`, while its TypeScript runner is installed 
 **Context.** `scripts/x402-buy.ts` never loaded `.env` and built its signature from `process.env.X402_PAY_TO ?? 'merchant:aegis-demo'`. With a real `.env` (`X402_PAY_TO=merchant_aegis_demo`) the facilitator's `payload.payTo !== config.X402_PAY_TO` check rejected every purchase as `bad_signature` (B-020).
 **Choice.** Load the repo `.env` the way `simulate.ts` does, and take `payTo` from `accepts[0].payTo` in the 402 challenge, falling back to the environment only if the challenge omits it.
 **Consequences.** `pnpm x402:buy` works against any configured payee, and the client half of the flow now behaves the way an x402 client should: it signs the terms the server quoted rather than terms it assumed. The shared HMAC secret remains the one part that is inherently simulated (C-B7).
+
+### D-075 · A job lease is per kind, not per queue (2026-09-06)
+
+**Context.** The sweeper re-queued any `running` job whose `locked_at` was older than two minutes, on the assumption that the worker had crashed. A `compliance_scan` makes one model call per active product and legitimately runs for 137–669 s, so it was re-queued mid-run, claimed by a second worker, and executed concurrently with itself until `attempts` exceeded `max_attempts` (B-022).
+**Choice.** `LEASE_BY_KIND` names a lease per job kind — `compliance_scan: '20 minutes'` — and everything unnamed keeps the original two minutes. The sweep is still one atomic `UPDATE`; only the interval is now chosen by `kind`.
+**Consequences.** Crash recovery is unchanged for the short jobs that dominate the queue, and a long job is no longer indistinguishable from a dead worker. The cost is that a genuine crash during a compliance scan is now recovered in up to 20 minutes rather than 2, which is the right trade for a job whose duplicate execution costs 16 model calls. A new long-running kind must declare its lease.
+
+### D-076 · The x402 price quote is served while the kill switch is on (2026-09-06)
+
+**Context.** `C-B5` requires the kill switch to stop the gateway. It stops settlement — a presented `X-PAYMENT` gets `503 gateway_paused` — but the unauthenticated `402` challenge still returns the price and a nonce.
+**Choice.** Keep it. A challenge moves no money and settles nothing; it is a price quote, and answering it lets a paused merchant's catalog stay legible to an agent that will retry later. The refusal happens at the only point where value would change hands.
+**Consequences.** A paused gateway still writes pending `x402_payments` rows for challenges nobody can settle; they expire on their own. Recorded here because the guardrail's own description reads "x402 returns 503", which is true of the request that matters and not of the quote — the T24 drill checked the quote first and briefly read as a violation.
+

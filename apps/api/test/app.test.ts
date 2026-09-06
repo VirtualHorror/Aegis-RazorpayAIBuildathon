@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { AEGIS_VERSION } from '@aegis/shared';
-import { buildApp } from '../src/app';
+import { buildApp, LOG_REDACT_PATHS } from '../src/app';
 import { loadConfig } from '../src/config';
 import type { DbProbeResult } from '../src/db/pool';
 
@@ -95,5 +95,22 @@ describe('CORS for the dashboard origin', () => {
     const response = await app.inject({ method: 'GET', url: '/health', headers: { origin: 'http://localhost:3000' } });
     // The x402 Lab reads this header from a cross-origin response; it is not CORS-safelisted, so it must be exposed.
     expect(String(response.headers['access-control-expose-headers'])).toContain('X-PAYMENT-RESPONSE');
+  });
+});
+
+describe('log redaction (C-D4)', () => {
+  // C-D4 names email, contact, phone and card.number. pino's `*` matches exactly one level, so a bare key and a
+  // one-level-nested key are separate paths; a list that only had `*.email` would print `log.info({ email })` in clear.
+  it('covers every field the constraint names, at the top level and one level in', () => {
+    for (const field of ['email', 'contact', 'phone', 'card.number']) {
+      expect(LOG_REDACT_PATHS).toContain(field);
+      expect(LOG_REDACT_PATHS).toContain(`*.${field}`);
+    }
+  });
+
+  it('covers the headers that carry a credential', () => {
+    expect(LOG_REDACT_PATHS).toContain('req.headers.authorization');
+    expect(LOG_REDACT_PATHS).toContain('req.headers["x-razorpay-signature"]');
+    expect(LOG_REDACT_PATHS).toContain('req.headers["x-payment"]');
   });
 });

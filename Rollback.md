@@ -7,7 +7,7 @@
 | Level | When | How | Time |
 |---|---|---|---|
 | L0 Kill switch | money/customer actions look wrong | `UPDATE guardrail_config SET value='true' WHERE key='kill_switch'` (or Settings → Kill switch). Modules return `blocked`, x402 returns 503. Worker keeps reconciling state. | seconds |
-| L1 Disable one module | one module misbehaves | `AEGIS_MODULES_DISABLED=b2b_negotiator` (comma list) and restart the API; the orchestrator skips it and records `blocked` with reason `module_disabled`. | 1 min |
+| L1 Disable one module | one module misbehaves | `AEGIS_MODULES_DISABLED=b2b_negotiator` (comma list) and restart the API. `createModuleRegistry` drops the module at boot, so it proposes nothing and **writes no action row at all** — verify by its absence from `/api/v1/actions`, not by a `blocked` reason. Verified 2026-09-06: `disabled: 'b2b_negotiator'` → `checkout_recovery, subscription_salvager, chargeback_evidence, noop`. | 1 min |
 | L2 Pause the worker | processing is corrupting projections | `AEGIS_WORKER_ENABLED=false` and restart. Ingress keeps accepting webhooks (jobs accumulate), nothing is processed. Resume later; jobs replay in order. | 1 min |
 | L3 Switch the LLM to stub | provider outage or bad outputs | `AEGIS_LLM_PROVIDER=stub` and restart. Every LLM call becomes deterministic; `degraded=true` on new rows. | 1 min |
 | L4 Revert a task's code | a task's commit introduced a bug | `git revert <commit>` (tasks are single commits: `git log --oneline`), or `git checkout task-NN-done` to inspect. Re-run `pnpm typecheck && pnpm test`. | 5 min |

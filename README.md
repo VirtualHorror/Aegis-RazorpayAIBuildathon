@@ -194,7 +194,7 @@ Every simulated payload is labelled in its own body — `network: "aegis-sim"`, 
 ## Verify it yourself
 
 ```bash
-pnpm test          # 65 files · 322 tests
+pnpm test          # 65 files · 326 tests
 pnpm typecheck     # tsc --noEmit, strict, no `any` anywhere (C-E2)
 pnpm lint          # three projects, --max-warnings 0
 pnpm --filter @aegis/web build

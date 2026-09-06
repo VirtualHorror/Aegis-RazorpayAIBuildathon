@@ -8,9 +8,25 @@ import {
 
 const DEFAULT_SWEEP_INTERVAL_MS = 30_000;
 
+/**
+ * How long a claimed job may hold its lease before the sweeper assumes the worker died.
+ * Intent: the lease has to outlast the slowest legitimate run of that kind, or the sweeper cannot tell a long job from
+ *         a crashed worker. A compliance scan makes one model call per active product — 137 s to 669 s observed — so a
+ *         two-minute lease re-queued it mid-run, a second worker claimed it, the same scan then ran concurrently with
+ *         itself burning duplicate model calls, and `attempts` climbed past `max_attempts` (B-022).
+ * Flow: name the lease per kind -> everything unnamed keeps the original two minutes -> the sweeper's recovery
+ *       semantics are otherwise unchanged.
+ */
+const LEASE_BY_KIND = { compliance_scan: '20 minutes' } as const;
+const DEFAULT_LEASE = '2 minutes';
+
 const SWEEP_SQL = `UPDATE jobs
 SET status = 'queued', locked_by = NULL, locked_at = NULL, updated_at = now()
-WHERE status = 'running' AND locked_at < now() - interval '2 minutes'`;
+WHERE status = 'running'
+  AND locked_at < now() - (CASE kind
+${Object.entries(LEASE_BY_KIND).map(([kind, lease]) => `        WHEN '${kind}' THEN interval '${lease}'`).join('\n')}
+        ELSE interval '${DEFAULT_LEASE}'
+      END)`;
 
 export interface SweeperHandle {
   stop(): Promise<void>;

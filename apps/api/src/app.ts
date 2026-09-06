@@ -115,12 +115,33 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   return app;
 }
 
+/**
+ * Log paths that must never reach a log line (C-D4).
+ * Intent: pino's `*` matches exactly one level, so a bare key and a one-level-nested key are different paths. Both are
+ *         listed for every PII field, and `card.number` is listed at both depths, because the constraint names it and
+ *         a pan in a log file is the one leak that cannot be walked back.
+ * Flow: request headers that carry credentials -> the PII fields at the top level -> the same fields one level in.
+ */
+export const LOG_REDACT_PATHS = [
+  'req.headers.authorization',
+  'req.headers["x-razorpay-signature"]',
+  'req.headers["x-payment"]',
+  'email',
+  'contact',
+  'phone',
+  'card.number',
+  '*.email',
+  '*.contact',
+  '*.phone',
+  '*.card.number',
+] as const;
+
 function loggerOptions(config: Config): FastifyServerOptions['logger'] {
   return {
     level: config.LOG_LEVEL,
     // PII never reaches the logs (Constraints C-D4). Extend these paths when new fields appear.
     redact: {
-      paths: ['req.headers.authorization', 'req.headers["x-razorpay-signature"]', '*.email', '*.contact', '*.phone'],
+      paths: [...LOG_REDACT_PATHS],
       censor: '[redacted]',
     },
     ...(config.NODE_ENV === 'development'
