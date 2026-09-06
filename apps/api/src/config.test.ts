@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ConfigError, loadConfig } from './config';
+import { ConfigError, loadConfig, parseTrustProxy } from './config';
 
 const minimal = {
   DATABASE_URL: 'postgres://aegis:pw@localhost:5432/aegis',
@@ -47,5 +47,23 @@ describe('loadConfig', () => {
     expect(cfg.OPENAI_API_KEY).toBeUndefined();
     expect(cfg.OPENAI_API_BASE).toBeUndefined();
     expect(cfg.OPENAI_BASE_URL).toBeUndefined();
+  });
+});
+
+describe('parseTrustProxy', () => {
+  it('defaults to no proxy so a client cannot pick its own rate-limit bucket', () => {
+    expect(loadConfig(minimal).TRUST_PROXY).toBe('');
+    expect(parseTrustProxy('')).toBe(false);
+    expect(parseTrustProxy(' false ')).toBe(false);
+    expect(parseTrustProxy('0')).toBe(false);
+  });
+  it('trusts every hop only when asked in so many words', () => {
+    expect(parseTrustProxy('true')).toBe(true);
+    expect(parseTrustProxy('TRUE')).toBe(true);
+    expect(parseTrustProxy('1')).toBe(true);
+  });
+  it('passes an address list or the loopback keyword through to Fastify unchanged', () => {
+    expect(parseTrustProxy('loopback')).toBe('loopback');
+    expect(parseTrustProxy(' 127.0.0.1, 10.0.0.0/8 ')).toBe('127.0.0.1, 10.0.0.0/8');
   });
 });

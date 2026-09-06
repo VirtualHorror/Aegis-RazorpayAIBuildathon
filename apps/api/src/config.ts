@@ -25,6 +25,7 @@ const EnvSchema = z.object({
   API_PORT: z.coerce.number().int().min(1).max(65535).default(4000),
   API_HOST: z.string().min(1).default('0.0.0.0'),
   WEB_ORIGIN: z.url().default('http://localhost:3000'),
+  TRUST_PROXY: z.string().default(''),
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required (see .env.example)'),
   DATABASE_URL_READONLY: z.string().min(1).optional(),
   DATABASE_URL_TEST: z.string().min(1).optional(),
@@ -62,4 +63,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new ConfigError(`Invalid environment:\n${lines.join('\n')}\nCopy .env.example to .env and fill in the values.`);
   }
   return parsed.data;
+}
+
+/**
+ * Fastify `trustProxy` from the `TRUST_PROXY` env string.
+ * Intent: behind nginx on the same host (deploy/nginx/aegis.conf) `request.ip` — and so the per-client rate limiter —
+ *         must see the caller, not 127.0.0.1; in development there is no proxy, and trusting `X-Forwarded-For` from
+ *         anyone would let a client choose its own rate-limit bucket. So the default is off and the value is explicit.
+ * Flow: '' | 'false' | '0' → false (default) · 'true' | '1' → true (every hop) · anything else → passed to Fastify as a
+ *       comma-separated list of proxy addresses / CIDRs or the keyword `loopback`.
+ */
+export function parseTrustProxy(value: string): boolean | string {
+  const trimmed = value.trim();
+  const lowered = trimmed.toLowerCase();
+  if (trimmed === '' || lowered === 'false' || trimmed === '0') return false;
+  if (lowered === 'true' || trimmed === '1') return true;
+  return trimmed;
 }

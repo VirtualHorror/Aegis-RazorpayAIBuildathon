@@ -4,7 +4,7 @@ import rateLimit from '@fastify/rate-limit';
 import type pg from 'pg';
 import { AEGIS_VERSION } from '@aegis/shared';
 import Fastify, { type FastifyInstance, type FastifyServerOptions } from 'fastify';
-import type { Config } from './config';
+import { parseTrustProxy, type Config } from './config';
 import type { DbProbeResult } from './db/pool';
 import { ingressPlugin } from './ingress';
 import type { IngressEventNotification } from './ingress/razorpay-webhook';
@@ -62,7 +62,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     logger: deps.logger ?? loggerOptions(config),
     genReqId: () => randomUUID(),
     bodyLimit: 1_048_576,
-    trustProxy: false,
+    // Off unless `.env` names the proxy (D-081): the hosted instance sets TRUST_PROXY=loopback for nginx on this host.
+    trustProxy: parseTrustProxy(config.TRUST_PROXY),
   });
 
   // Intent: the dashboard is a browser client on another origin, so CORS decides what it can actually do (B-016).
