@@ -498,3 +498,24 @@ the wrong way or fails to disperse.
 gives between 10 071 and 19 699 saturated pixels, never zero, which is the total-internal-reflection alarm. The limits
 move automatically if the prism's proportions or the dispersion constant change, and `prismShader.test.ts` fails if
 the derivation is replaced by a hard-coded angle.
+
+### D-085 · The hero is a multi-pass mesh pipeline, and its environment map is equirectangular (2026-09-07)
+
+**Context.** The project owner asked for the cinematic look of the reference: mesh-based light instead of a single
+fullscreen shader, a glass material lit by an environment map, and a bloom pass. The stepping they saw was real and
+had a specific cause — the fan was integrated over 48 discrete wavelengths per pixel, and past a few hundred pixels
+those samples separate into distinct rays.
+**Choice.** Five passes, in `renderer.ts`: environment (once), scene, bright, two blurs, composite. The light is
+geometry now — quads generated in the vertex stage and rasterised, so the smoothness comes from interpolation rather
+than from sampling a field, and the fan is 64 overlapping ribbons that merge into one continuous spectrum. The prism
+is a real triangular-prism mesh shaded against the environment map. Three decisions inside that:
+*the environment map is a 2:1 equirectangular texture, not a cubemap*, because vgpu's public API has no cube-texture
+resource — the lookup is `direction → uv`, the job is identical, and it is one texture instead of six faces;
+*there is no depth buffer* — the solid is convex and drawn far half, then the light inside it, then near half, which
+is both cheaper and exactly the order glass needs; and *the optics stayed in WGSL* (`optics.wgsl`, imported by the
+beam and the glass), so the pointer clamp is still derived from the geometry rather than moved to TypeScript.
+**Consequences.** The picture is smooth at any distance from the prism and much cheaper per pixel: the fragment work
+is now a Gaussian and an environment lookup rather than 120 field evaluations. The glass gains real facets that
+change as the beam moves, which is what the environment map was for. Cost: seven shader files instead of one, four
+offscreen targets, and a pipeline that must be pre-warmed — all of which `renderer.ts` owns. A browser without WebGPU
+still shows a black canvas (D-083).

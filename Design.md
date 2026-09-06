@@ -78,11 +78,25 @@ apex angle and the indices, keeps `BEAM_MARGIN` (3.4°) in hand, and clamps the 
 end and every wavelength gets out; outside it there would be no spectrum at all. `N_SPREAD = 0.30` is what opens the
 fan that far, where real glass would give two or three degrees.
 
-Implementation:
-- `components/prism/prism.wgsl` — the whole scene. One uniform (`resolution_time`: viewport, clock, device pixel ratio); everything else is derived from the viewport inside the shader.
-- `components/prism/renderer.ts` — the pipeline: `init()` → `surface()` sized explicitly → `effect()` → `compile()` against the surface's render signature → pointer listeners → `frameLoop`. Structured after the official example's own `renderer.ts`. It reports the pointer in 0..1 of the canvas and never computes an angle, so it cannot steer the beam anywhere the shader has not allowed.
+Implementation — a multi-pass, mesh-based pipeline (D-085). The single fullscreen shader was replaced because a
+distance field evaluated per pixel, with the spectrum integrated over 48 discrete wavelengths, separated into visible
+rays in the far field. Geometry does not: a rasterised triangle interpolates.
+
+| Pass | Target | What it draws |
+|---|---|---|
+| environment | 512×256 equirect, `rgba16float`, rendered once | a dark studio: a tight key, a cool rim, a warm bounce |
+| scene | canvas size, `rgba16float` | the beam as geometry and the prism as a mesh, in painter's order |
+| bright | half size | the scene above a soft-kneed threshold |
+| blur × 2 | half size, ping-ponged | a separable Gaussian, across then down |
+| composite | the canvas | scene + bloom, Lottes tonemap, sRGB, edge fade, dither |
+
+- `components/prism/optics.wgsl` — a pure WGSL module: the prism, the ray, Snell twice, the spectrum, the oblique projection, and the derived steering clamp. Imported by both the beam and the glass, so one description of the physics feeds every pass.
+- `components/prism/beam.wgsl` — the light as quads generated in the vertex stage: the shaft, the segment inside the glass, 64 overlapping ribbons across the spectrum, and two impact billboards. Additive, with a two-lobe Gaussian across each quad for a core inside a halo.
+- `components/prism/glass.wgsl` — the prism as a triangular-prism mesh (two caps, three sides) generated from `vertex_index`, shaded two-sided against the environment map: Fresnel between a reflection and a refraction through the body, plus a grazing bevel. Drawn in two halves, far then near, so the back faces read through the front ones without a depth buffer.
+- `components/prism/{env,bright,blur,composite}.wgsl` — the studio and the bloom chain.
+- `components/prism/renderer.ts` — targets, pass order, pointer listeners, easing and resize. It reports the pointer in 0..1 of the canvas and never computes an angle, so it cannot steer the beam anywhere the optics module has not allowed.
 - `components/prism/PrismHero.tsx` — owns the canvas and its lifetime, nothing else.
-- `components/prism/prismShader.test.ts` — the shader resolves, declares one binding, and its struct members match what the renderer sets.
+- `components/prism/prismShader.test.ts` — every pass resolves, the beam and the glass have vertex stages, the clamp is still derived, the renderer sets exactly the uniforms the shaders declare, and the passes run in the order a bloom needs.
 
 There is no second renderer: a browser without WebGPU shows the card with a black canvas (D-083).
 

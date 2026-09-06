@@ -982,8 +982,8 @@ Run from the production checkout after `deploy/README.md` steps 1–5. The first
 
 ```bash
 pm2 ls                                                     # aegis-api and aegis-web both `online`
-curl -s http://127.0.0.1:4000/health                       # "status":"ok", "db":"ok", "version":"1.2.1"
-curl -s http://127.0.0.1:4000/api/v1/system                # "env":"development" (D-081), "version":"1.2.1"
+curl -s http://127.0.0.1:4000/health                       # "status":"ok", "db":"ok", "version":"1.3.0"
+curl -s http://127.0.0.1:4000/api/v1/system                # "env":"development" (D-081), "version":"1.3.0"
 curl -sI http://127.0.0.1:3000/ | head -1                  # HTTP/1.1 200 OK
 grep -rl "api.aegis.nabhanyubm.tech" apps/web/.next/static | head -1   # the API URL was inlined at build time
 ss -ltnp | grep -E ':(3000|4000) '                         # both bound to 127.0.0.1 only
@@ -1000,52 +1000,38 @@ sudo certbot certificates                                  # one certificate, bo
 systemctl is-enabled pm2-nabhanyu                          # enabled (resurrects the `pm2 save` dump on boot)
 ```
 
-Chrome: open https://aegis.nabhanyubm.tech — the top bar shows `development` and `v1.2.1`, Run demo completes, the Demo-mode pill opens the Sandbox dialog, and the API's log lines carry the client's address rather than 127.0.0.1 (`TRUST_PROXY=loopback`).
+Chrome: open https://aegis.nabhanyubm.tech — the top bar shows `development` and `v1.3.0`, Run demo completes, the Demo-mode pill opens the Sandbox dialog, and the API's log lines carry the client's address rather than 127.0.0.1 (`TRUST_PROXY=loopback`).
 
-## Prism hero — vgpu.sh replica (verified 2026-09-07, Claude)
+## Prism hero — multi-pass mesh pipeline (verified 2026-09-07, Claude)
 
 This machine has no GPU, so the checks either force Chrome's software WebGPU or render through vgpu's own software
-renderer. Both execute the same WGSL a hardware GPU will.
+renderer. Both execute the same shaders a hardware GPU will.
 
 ```bash
-pnpm --filter @aegis/web exec vgpu check src/components/prism/prism.wgsl   # validation ok, 0 diagnostics, one `params` binding
-pnpm --filter @aegis/web test                                              # 11 files / 42 tests (prismShader.test.ts pins the WGSL/renderer contract)
-pnpm typecheck && pnpm lint && pnpm --filter @aegis/web build              # all exit 0
+for f in optics env glass beam bright blur composite; do
+  pnpm --filter @aegis/web exec vgpu check src/components/prism/$f.wgsl   # validation ok, 0 diagnostics
+done
+pnpm --filter @aegis/web test                     # 11 files / 44 tests (prismShader.test.ts pins the pipeline contract)
+pnpm typecheck && pnpm lint && pnpm --filter @aegis/web build   # all exit 0
 ```
 
-Pixels, without a browser (`npx vgpu install-software-renderer` once, then a scratch project outside the repo so
-`@vgpu/adapter-node` stays denied here — D-069): resolve `prism.wgsl`, set `resolution_time`, render to a target and
-read it back. Expect a black stage with a full-intensity highlight: `mean 26.36 · max 254 · lit 0.25 · near-black
-0.655`. Render the same frame at `t = 0` and `t = 7.5` and difference them: about 840 pixels move by up to 18 levels,
-which is the drifting dust and nothing else, since the rest of the scene is static.
+Pixels, without a browser: run the same five passes headless (`npx vgpu install-software-renderer` once, then a
+scratch project outside the repo so `@vgpu/adapter-node` stays denied here — D-069) and read the composite target.
 
-| Spec point | How it is checked |
-|---|---|
-| Pure black stage | near-black fraction 0.655 with no ambient term in the shader |
-| Solid prism, far face and struts visible | `sd_prism` sweeps the triangle along the extrusion; the render shows both faces and the three struts |
-| Derivative anti-aliasing | `length(vec2f(dpdx(solid), dpdy(solid)))`, taken before any branch |
-| One white volumetric ray, impact bloom, internal travel, exit caustic | all four visible in the render; the caustic is gated on `refracts` |
-| Continuous spectrum | 48 wavelengths integrated per pixel; the fan spans 16.7° with every wavelength escaping |
-| Dust lit only by the light | motes multiply `light_at(position)`, so they are dark away from the beam |
-| Lottes tonemap, dithering, edge fade | `tonemap_lottes`, `ign`, `edge_fade` in the final block |
+| Pointer | Expect | Observed |
+|---|---|---|
+| rest (0.5, 0.3) | black stage, full-intensity highlight, spectrum present | max 255 · lit 0.21 · near-black 0.768 · 17 449 saturated |
+| 0.05, 0.05 | spectrum still escapes | 12 359 saturated |
+| 0.95, 0.95 | spectrum still escapes | 13 670 saturated |
 
-Browser (headless Chrome with a SwiftShader adapter, production build): the hero canvas has a live `webgpu` context, a
-backing store equal to its CSS box times the device pixel ratio (990×289 at dpr 1 — a 300×150 backing means the
-surface was not sized, B-027 in the 2 AM log), and the screenshot shows the prism, the beam and the rainbow.
-
-A browser with no WebGPU adapter shows a black canvas: there is no second renderer any more (D-083).
-
-**Pointer steering (D-084).** The beam must follow the cursor, and must never be steerable into total internal
-reflection. Render headless at the pointer corners and count saturated pixels — zero would mean the spectrum was
-trapped:
-
-| Pointer | Saturated pixels |
-|---|---|
-| 0.0, 0.0 | 10 071 |
-| 1.0, 0.0 | 19 699 |
-| 0.0, 1.0 | 11 092 |
-| 1.0, 1.0 | 12 926 |
-| rest (0.5, 0.3) | 15 981 |
+Zero saturated pixels at any pointer position means the light was trapped by total internal reflection, which the
+derived clamp in `optics.wgsl` exists to prevent.
 
 In the browser, dispatch `Input.dispatchMouseEvent` at two corners of the hero and difference the screenshots: about
-108 000 pixels change, 37.8 % of the box. A build where the pointer is ignored changes none.
+74 000 pixels change, 25.9 % of the box. A build where the pointer is ignored changes none.
+
+Two things worth checking by eye, because a metric will not catch them: the spectrum must be a continuous wash with no
+visible banding at the far edge of the frame (the failure the mesh rebuild fixed), and the prism must read as dark
+glass with visible far facets rather than as an opaque solid (the failure in 2 AM log 28).
+
+A browser with no WebGPU adapter shows a black canvas: there is no second renderer (D-083).
