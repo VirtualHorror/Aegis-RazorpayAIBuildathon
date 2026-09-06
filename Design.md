@@ -49,17 +49,37 @@ Typography: `Geist Sans` for UI (`next/font`), `Geist Mono` for ids, amounts, JS
 
 ## 5. Flourishes (exact specs)
 
-### 5.1 `PrismHero` — light-refracting triangle (reference 1)
-What the reference does: black starfield; a centred glass triangle (prism) drawn as a translucent wireframe with soft internal reflections; a bright **white beam enters from the upper-left** at an angle controlled by the pointer, bends inside the prism, and **exits on the right as a rainbow fan** (red → violet, additive glow, slight blur), with a thin white specular streak continuing past the prism. As the pointer moves the entry angle changes and the fan sweeps; when the pointer leaves, the beam eases back to a resting angle.
+### 5.1 `PrismHero` — the vgpu.sh hero, replicated (reference 1)
 
-Aegis version: the beam is the event stream, the fan colours are the module spectrum (§2). Overlay labels at the fan ends ("Checkout recovery", "Salvage", "Negotiate", "Evidence", "x402") that light up when an SSE event for that module arrives.
+**Superseded on 2026-09-07 by the project owner (D-083).** The earlier design in this section adapted the reference
+into Aegis's own metaphor: seven module-coloured rays, a legend that lit per module, a Canvas 2D twin. That was
+overruled. The hero is now a strict replica of the vgpu.sh landing shader and carries no product data at all.
+
+The specification, in full:
+
+| | |
+|---|---|
+| Stage | true black (`#000000`); no ambient term, no vignette, no starfield |
+| Geometry | one solid equilateral glass prism, centre-right, as a signed distance field: the triangle swept along an extrusion so the far face and the three struts read through the transparent near face |
+| Edges | derivative-based anti-aliasing (`length(vec2f(dpdx, dpdy))` of the SDF, taken in uniform control flow) |
+| Light | a single intense white volumetric ray entering from the side; an impact bloom where it meets the outer wall; the refracted ray crossing the glass; a caustic where it leaves the far wall |
+| Dispersion | on exit the ray becomes a wide continuous spectrum, red through violet, integrated over 48 wavelengths rather than drawn as discrete bands |
+| Dust | tiny drifting motes that emit nothing and are visible only where the light field reaches them |
+| Display | Lottes tonemap, linear→sRGB, interleaved-gradient dither, a screen-edge fade on all four sides |
+
+Physics, because it dictates the composition: an equilateral prism deviates light by at least about 37°, so a shallow
+beam arriving from above meets the far wall past the critical angle, totally internally reflects, and produces no
+spectrum at all. The beam therefore rises at 24° (near minimum deviation), which leaves both internal angles near 28°
+— about 13° clear of the critical angle. That headroom is what the dispersion constant spends: `N_SPREAD = 0.30`
+opens a 16.7° fan with every wavelength still escaping, where real glass would give two or three degrees.
 
 Implementation:
-- `components/prism/prismGeometry.ts` — pure: `prismGeometry({ width, height, pointer }) → { triangle: [p1,p2,p3], entry: {from,to}, internal: {from,to}, exit: {from,to}, fanRays: {angle, color}[] }` using Snell-like bending (index 1.5, dispersion spread 18°). Unit tested.
-- `components/prism/PrismWebGPU.tsx` — `vgpu` `effect()` fullscreen WGSL (`prism.wgsl`): starfield hash noise, SDF triangle outline with fresnel-ish glow, beam segments as capsule SDFs with additive colour, 7-band fan. Uniforms: `time`, `pointer`, `resolution`, `activity[7]` (per-module pulse 0..1 decaying over 1.2 s).
-- `components/prism/PrismCanvas2D.tsx` — same geometry drawn with `lineTo`, `shadowBlur`, `globalCompositeOperation: 'lighter'`; identical props. Used when `!navigator.gpu` or `prefers-reduced-motion` (then static frame).
-- `components/prism/PrismHero.tsx` — feature-detects and picks; caps DPR at 2; pauses when tab hidden; 60 fps target, < 3 ms/frame on the 2D path.
-- Codex: run `npx vgpu docs cat getting-started.md` and `npx vgpu examples search "fullscreen effect"` before writing WGSL. Install with `pnpm add vgpu three` + `pnpm add -D @webgpu/types` inside `apps/web` only.
+- `components/prism/prism.wgsl` — the whole scene. One uniform (`resolution_time`: viewport, clock, device pixel ratio); everything else is derived from the viewport inside the shader.
+- `components/prism/renderer.ts` — the pipeline: `init()` → `surface()` sized explicitly → `effect()` → `compile()` against the surface's render signature → `frameLoop`. Structured after the official example's own `renderer.ts`.
+- `components/prism/PrismHero.tsx` — owns the canvas and its lifetime, nothing else.
+- `components/prism/prismShader.test.ts` — the shader resolves, declares one binding, and its struct members match what the renderer sets.
+
+There is no second renderer: a browser without WebGPU shows the card with a black canvas (D-083).
 
 ### 5.2 `HalftoneField` — vanishing/appearing pattern (reference 2)
 What the reference does: a regular grid of tiny white dots on black (~14 px pitch). An invisible smooth field (a slowly flowing ribbon/aurora shape) moves across; where the field is bright the dots grow until they merge into solid white, where it is dark they shrink to pinpoints. The result is a shape that appears to be "printed" onto the dot matrix and dissolves as it passes.
@@ -99,4 +119,5 @@ Implementation (`components/ui/GlowInput.tsx`):
 - **T19–T21 (2026-09-06, Claude).** Action and approval surfaces follow §4: module colour appears only as a 3px rail and a badge, never as a fill behind text; guard rules render as a checklist with limit against actual; the outbound payload carries a low-contrast SIMULATED watermark over the JSON (C-B7). Settings uses a purpose-built confirm dialog, never `window.confirm` (§4). Money is typed in rupees and stored in paise; every field shows the stored raw value beneath it so the UI never hides what the API holds.
 - **T22 (2026-09-06, Claude).** `PrismHero` per §5.1: `prismGeometry.ts` is the single source of the scene for both renderers (Snell bend at index 1.5, 18° fan, resting angle 10° when the pointer leaves), `prism.wgsl` draws it as SDF capsules with additive colour through `vgpu`'s `effect()`, and `PrismCanvas2D` draws the identical scene with `lineTo`, `shadowBlur` and `globalCompositeOperation: "lighter"`. `PrismHero` picks the path with `useSyncExternalStore` (no setState-in-effect), falls back on an `init()` failure, honours `NEXT_PUBLIC_PRISM_MODE`, caps DPR at 2, and pauses offscreen or when the tab is hidden. Deviation from §5.1: the fan-end labels became a right-hand legend with colour swatches, because the fan sweeps with the pointer and a label pinned to a ray ends up naming the wrong colour; the legend still lights per module on a live event. A new `--on-accent` token keeps text on accent fills above 4.5:1 in both themes (B-018).
 - **T25 (2026-09-06, Claude).** `SandboxPill` joins the top bar between the LLM pill and the kill switch: icon-only below `md` (the 360px bar has ~10px to spare, B-025), `Live · acc_…` in accent from `md`, state always in the accessible name. `SandboxModal` follows `ConfirmDialog`: `role="dialog"`, focus moves to the first radio and back on close, Escape and backdrop close, body scroll locked, portalled to `document.body` because the header's `backdrop-blur` is a containing block for `fixed`. Sheet-style (bottom-anchored, full width) below `sm`, centred card above; inputs match the settings form; secrets are `type="password"` with one "show while typing" checkbox; errors use `aria-invalid` + `aria-describedby` and the first invalid field takes focus.
+- **Prism hero replica (2026-09-07, Claude, on the project owner's instruction).** §5.1 above is the specification and the code follows it exactly; D-083 records what was removed to get there. The earlier pass below is kept for the record.
 - **Prism hero pass (2026-09-06, Claude).** The WebGPU path was running and looked nothing like the reference: a milky blue field, a flat wireframe triangle and thin flat rays. `prism.wgsl` was rewritten against the official vgpu example `triangle-led-front` (`npx vgpu examples pull triangle-led-front`) — Lottes tonemap and linear→sRGB from its `color-utils.wgsl`, the signed triangle SDF from `geometry.wgsl`, interleaved-gradient dithering from `direct-triangle-raycast.wgsl`, and both the derivative-based anti-aliased silhouette and the vertical edge fade from `themes/dark/main-scene-floor.wgsl`. The scene stays Aegis's own (§5.1: one beam in, seven module rays out); the reference's own scene is LED edges lighting a floor and was not copied (D-082). What changed visually: a near-black stage, a **solid** glass prism (the triangle swept along a new `depth` vector, so the far face and the three struts are visible through the glass), a bright thin beam with warm/cool dispersion fringes that separate away from the glass, an impact bloom, a caustic where the bent ray leaves the far wall, and a fan that opens out of the exit point instead of seven equal lines. `PrismCanvas2D` draws the same solid on the same stage. The legend gained a right-hand scrim because the brighter fan ran under it (B-018 again).

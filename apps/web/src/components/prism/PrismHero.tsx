@@ -1,85 +1,38 @@
 "use client";
 
-import { useCallback, useState, useSyncExternalStore } from "react";
-import { MODULE_LABELS } from "@/lib/format";
-import { PrismCanvas2D } from "./PrismCanvas2D";
-import { PrismWebGPU } from "./PrismWebGPU";
-import { FAN_MODULES } from "./prismGeometry";
+import { useEffect, useRef } from "react";
+import { createPrismRenderer } from "./renderer";
 
 export interface PrismHeroProps {
-  /** Module key → the timestamp (ms) of its last bus event. */
-  activity: Readonly<Record<string, number>>;
-  /** Modules whose label should read as lit right now (the parent owns the timers). */
-  active: ReadonlySet<string>;
   eventsIn: string;
   actionsOut: string;
 }
 
-type Mode = "auto" | "2d" | "gpu";
-const MODE: Mode = ((): Mode => {
-  const value = process.env.NEXT_PUBLIC_PRISM_MODE;
-  return value === "2d" || value === "gpu" ? value : "auto";
-})();
-
 /**
- * The hero (Design.md §5.1): WebGPU when the browser has it, Canvas 2D otherwise, always the same geometry.
- * `NEXT_PUBLIC_PRISM_MODE=2d|gpu|auto` forces a path for demos and screenshots.
- * Labels are HTML, not canvas, so they are readable and translatable (Design.md §8).
+ * The hero canvas. Everything drawn inside it is `prism.wgsl`: a solid glass prism, one white ray, and the spectrum
+ * it disperses into. The component owns the canvas and its lifetime, nothing else — no scene, no overlay on the
+ * picture, and no second renderer.
  */
-/**
- * Which renderer this browser gets. Read through `useSyncExternalStore` rather than an effect, so the server renders
- * "pending" (no canvas) and the client picks a path during hydration without a cascading setState.
- *
- * The only question asked here is whether the browser exposes WebGPU at all. Everything else that used to force the
- * 2D path was a false positive (B-026): `prefers-reduced-motion` is a request to stop animating, not to stop using
- * the GPU, and the shader already freezes itself on the `still` uniform. The honest test of a WebGPU device is
- * asking for one, so the real decision is made by `PrismWebGPU`: if `init()` cannot get an adapter it calls
- * `onUnsupported()` and the Canvas 2D renderer takes over.
- */
-const subscribeNoop = () => () => {};
-function detectRenderer(): "gpu" | "2d" {
-  if (MODE === "2d") return "2d";
-  if (MODE === "gpu") return "gpu";
-  return typeof navigator !== "undefined" && "gpu" in navigator ? "gpu" : "2d";
-}
+export function PrismHero({ eventsIn, actionsOut }: PrismHeroProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
-export function PrismHero({ activity, active, eventsIn, actionsOut }: PrismHeroProps) {
-  const detected = useSyncExternalStore(subscribeNoop, detectRenderer, () => "pending" as const);
-  const [unsupported, setUnsupported] = useState(false);
-  const fallback = useCallback(() => setUnsupported(true), []);
-  const renderer = unsupported ? "2d" : detected;
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const renderer = createPrismRenderer({ canvas });
+    void renderer.ready;
+    return () => renderer.dispose();
+  }, []);
 
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-border bg-[#03040a] text-[#e8eaf2]" style={{ colorScheme: "dark" }}>
-      {/* The beam sweeps under this copy, so it sits on its own soft scrim rather than fighting the light. */}
-      <div className="px-4 pt-4 sm:absolute sm:left-6 sm:top-5 sm:z-[1] sm:max-w-sm sm:rounded-xl sm:bg-[radial-gradient(120%_120%_at_0%_0%,rgba(3,4,10,0.94),rgba(3,4,10,0))] sm:p-3">
+    <div className="relative overflow-hidden rounded-2xl border border-border bg-black text-[#e8eaf2]" style={{ colorScheme: "dark" }}>
+      <div className="px-4 pt-4 sm:absolute sm:left-6 sm:top-5 sm:z-[1] sm:max-w-sm sm:rounded-xl sm:bg-[radial-gradient(120%_120%_at_0%_0%,rgba(0,0,0,0.94),rgba(0,0,0,0))] sm:p-3">
         <p className="text-lg font-semibold tracking-tight sm:text-xl">One stream in. Seven specialists out.</p>
         <p className="mt-1 max-w-sm text-xs text-[#8b93a7] sm:text-sm">Every action is proposed by code, bounded by guardrails and gated by a human when money is at stake.</p>
       </div>
 
       <div className="relative aspect-[960/280] w-full">
-        {renderer === "gpu" ? <PrismWebGPU activity={activity} onUnsupported={fallback} /> : renderer === "2d" ? <PrismCanvas2D activity={activity} /> : null}
-
-        {/* A legend in fan order rather than labels pinned to the rays: the fan sweeps with the pointer, so a fixed
-            label would soon point at the wrong colour. Each entry lights up when its module produces an event. */}
-        {/* The fan now runs bright all the way to the right edge, so the legend gets the same scrim treatment the
-            heading has: without it the labels sit on top of a lit ray and lose their contrast (B-018). */}
-        <div className="pointer-events-none absolute inset-y-0 right-0 hidden w-56 bg-[linear-gradient(to_left,rgba(3,4,10,0.92),rgba(3,4,10,0.62)_55%,rgba(3,4,10,0))] sm:block" aria-hidden />
-        <ul className="pointer-events-none absolute inset-y-0 right-3 hidden flex-col justify-center gap-1 sm:flex" aria-hidden>
-          {FAN_MODULES.map((entry) => {
-            const lit = active.has(entry.module);
-            return (
-              <li
-                key={entry.module}
-                className="flex items-center justify-end gap-2 whitespace-nowrap text-[11px] font-medium transition-[color,text-shadow] duration-200"
-                style={{ color: lit ? entry.color : "#8b93a7", textShadow: lit ? `0 0 12px ${entry.color}` : "none" }}
-              >
-                {MODULE_LABELS[entry.module]}
-                <span className="h-2.5 w-2.5 shrink-0 rounded-full transition-[box-shadow] duration-200" style={{ background: entry.color, boxShadow: lit ? `0 0 10px ${entry.color}` : "none" }} />
-              </li>
-            );
-          })}
-        </ul>
+        <canvas ref={canvasRef} aria-hidden="true" className="block h-full w-full touch-none" />
       </div>
 
       <div className="flex gap-4 px-4 pb-3 font-mono text-xs text-[#8b93a7] sm:absolute sm:bottom-4 sm:left-6 sm:p-0">
@@ -92,10 +45,8 @@ export function PrismHero({ activity, active, eventsIn, actionsOut }: PrismHeroP
         </span>
       </div>
 
-      {/* The picture carries meaning, so it also exists as text (Design.md §8). */}
       <p className="sr-only">
-        A single beam of webhook events enters a glass prism and leaves as seven coloured rays, one per module: {FAN_MODULES.map((entry) => MODULE_LABELS[entry.module]).join(", ")}. {eventsIn} events in,{" "}
-        {actionsOut} actions out.
+        A single beam of light enters a glass prism and leaves as a continuous spectrum. {eventsIn} events in, {actionsOut} actions out.
       </p>
     </div>
   );

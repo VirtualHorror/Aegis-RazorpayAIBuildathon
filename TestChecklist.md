@@ -982,8 +982,8 @@ Run from the production checkout after `deploy/README.md` steps 1–5. The first
 
 ```bash
 pm2 ls                                                     # aegis-api and aegis-web both `online`
-curl -s http://127.0.0.1:4000/health                       # "status":"ok", "db":"ok", "version":"1.1.1"
-curl -s http://127.0.0.1:4000/api/v1/system                # "env":"development" (D-081), "version":"1.1.1"
+curl -s http://127.0.0.1:4000/health                       # "status":"ok", "db":"ok", "version":"1.2.0"
+curl -s http://127.0.0.1:4000/api/v1/system                # "env":"development" (D-081), "version":"1.2.0"
 curl -sI http://127.0.0.1:3000/ | head -1                  # HTTP/1.1 200 OK
 grep -rl "api.aegis.nabhanyubm.tech" apps/web/.next/static | head -1   # the API URL was inlined at build time
 ss -ltnp | grep -E ':(3000|4000) '                         # both bound to 127.0.0.1 only
@@ -1000,29 +1000,37 @@ sudo certbot certificates                                  # one certificate, bo
 systemctl is-enabled pm2-nabhanyu                          # enabled (resurrects the `pm2 save` dump on boot)
 ```
 
-Chrome: open https://aegis.nabhanyubm.tech — the top bar shows `development` and `v1.1.1`, Run demo completes, the Demo-mode pill opens the Sandbox dialog, and the API's log lines carry the client's address rather than 127.0.0.1 (`TRUST_PROXY=loopback`).
+Chrome: open https://aegis.nabhanyubm.tech — the top bar shows `development` and `v1.2.0`, Run demo completes, the Demo-mode pill opens the Sandbox dialog, and the API's log lines carry the client's address rather than 127.0.0.1 (`TRUST_PROXY=loopback`).
 
-## Prism hero — WebGPU path (verified 2026-09-06, Claude)
+## Prism hero — vgpu.sh replica (verified 2026-09-07, Claude)
 
-This machine has no GPU, so every check below either forces Chrome's software WebGPU or renders through vgpu's own
-software renderer. Both are the real WebGPU path; neither needs a graphics card.
+This machine has no GPU, so the checks either force Chrome's software WebGPU or render through vgpu's own software
+renderer. Both execute the same WGSL a hardware GPU will.
 
 ```bash
 pnpm --filter @aegis/web exec vgpu check src/components/prism/prism.wgsl   # validation ok, 0 diagnostics, one `params` binding
-pnpm --filter @aegis/web test                                              # 13 files / 52 tests (prismShader.test.ts pins the WGSL/uniform contract)
+pnpm --filter @aegis/web test                                              # 11 files / 42 tests (prismShader.test.ts pins the WGSL/renderer contract)
 pnpm typecheck && pnpm lint && pnpm --filter @aegis/web build              # all exit 0
 ```
 
 Pixels, without a browser (`npx vgpu install-software-renderer` once, then a scratch project outside the repo so
-`@vgpu/adapter-node` stays denied here — D-069): resolve `prism.wgsl`, feed it `prismGeometry` + `prismUniforms`,
-render to a target and read it back. Before the rewrite: `mean 88.98 · max 229 · near-black 0.0000`. After:
-`mean 53.55 · max 255 · lit 0.69` — a black stage with a real highlight, which is the whole point of the change.
+`@vgpu/adapter-node` stays denied here — D-069): resolve `prism.wgsl`, set `resolution_time`, render to a target and
+read it back. Expect a black stage with a full-intensity highlight: `mean 26.36 · max 254 · lit 0.25 · near-black
+0.655`. Render the same frame at `t = 0` and `t = 7.5` and difference them: about 840 pixels move by up to 18 levels,
+which is the drifting dust and nothing else, since the rest of the scene is static.
 
-Browser, both paths on the same production build (headless Chrome, `Page.captureScreenshot`):
+| Spec point | How it is checked |
+|---|---|
+| Pure black stage | near-black fraction 0.655 with no ambient term in the shader |
+| Solid prism, far face and struts visible | `sd_prism` sweeps the triangle along the extrusion; the render shows both faces and the three struts |
+| Derivative anti-aliasing | `length(vec2f(dpdx(solid), dpdy(solid)))`, taken before any branch |
+| One white volumetric ray, impact bloom, internal travel, exit caustic | all four visible in the render; the caustic is gated on `refracts` |
+| Continuous spectrum | 48 wavelengths integrated per pixel; the fan spans 16.7° with every wavelength escaping |
+| Dust lit only by the light | motes multiply `light_at(position)`, so they are dark away from the beam |
+| Lottes tonemap, dithering, edge fade | `tonemap_lottes`, `ign`, `edge_fade` in the final block |
 
-| Chrome flags | Expected | Observed |
-|---|---|---|
-| `--enable-unsafe-swiftshader …` (adapter available) | WebGPU path | hero canvas 990×289, live `webgpu` context, screenshot shows the solid prism, the dispersed beam and the seven-ray fan |
-| none (no usable adapter) | Canvas 2D fallback, for the right reason | `[aegis] no WebGPU device on this machine, using the Canvas 2D renderer: navigator.gpu.requestAdapter() returned null.`, 2D canvas draws the same scene |
+Browser (headless Chrome with a SwiftShader adapter, production build): the hero canvas has a live `webgpu` context, a
+backing store equal to its CSS box times the device pixel ratio (990×289 at dpr 1 — a 300×150 backing means the
+surface was not sized, B-027 in the 2 AM log), and the screenshot shows the prism, the beam and the rainbow.
 
-A regression to watch: a browser with a working adapter must never log the fallback line (B-026, B-027).
+A browser with no WebGPU adapter shows a black canvas: there is no second renderer any more (D-083).

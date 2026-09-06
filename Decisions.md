@@ -459,3 +459,24 @@ The x402 buyer lives under `scripts/`, while its TypeScript runner is installed 
 **Context.** The brief for this pass was to make `PrismHero` match the official Vercel vgpu template. Two things had to be separated first. The published example is `triangle-led-front` ("Triangle LED Hero": 72 LED emitters on the triangle's edges, an analytic raycast that gathers their radiance, and a noisy floor that the light falls on) — an entirely different picture from the vgpu.sh landing hero the reference recording shows, which is a beam bouncing off a glass prism and is not in the examples API. Neither is Aegis's scene: `Design.md §5.1` asks for one webhook stream entering a prism and leaving as seven module-coloured rays, which is the product's own metaphor, is wired to live per-module activity, has a legend, and is covered by `prismGeometry.test.ts`.
 **Choice.** Copy the reference's *technique* and keep Aegis's *scene*. From `triangle-led-front`: the Lottes tonemap and linear→sRGB conversion (`color-utils.wgsl`), the signed triangle SDF (`geometry.wgsl`), interleaved-gradient-noise dithering (`direct-triangle-raycast.wgsl`), and the anti-aliased silhouette taken from the SDF gradient in uniform control flow plus the vertical edge-fade envelope (`themes/dark/main-scene-floor.wgsl`). From the recording: a near-black stage, a solid glass body rather than an outline, a thin very bright beam with dispersion fringes, and bloom where the light lands. The prism became a solid by sweeping the triangle along a `depth` vector that lives in `prismGeometry.ts`, so the Canvas 2D fallback draws the same object. Copying the LED example wholesale was rejected: it would have deleted the seven-ray fan, the module colours, the activity pulses and the legend — the only parts of the picture that mean anything on a merchant control plane — and added a `lil-gui` panel to a dashboard.
 **Consequences.** The hero reads like the reference and still says what the product does. The shader is validated by `npx vgpu check`, rendered headlessly through vgpu's software renderer for pixel evidence (this machine has no GPU), and pinned by `prismShader.test.ts`, which fails if the WGSL struct and `prismUniforms` drift apart. `vgpu`'s Node adapter stays out of the repo (D-069): the pixel harness lives in a scratch directory outside it.
+
+### D-083 · The hero is a replica of the vgpu.sh shader, not an Aegis picture (2026-09-07)
+
+**Context.** D-082 kept Aegis's own scene — one beam in, seven module-coloured rays out, a legend lighting per module —
+and borrowed only the reference's rendering technique. The project owner overruled that: the hero is to be a strict
+1:1 replica of the vgpu.sh landing shader, written to a supplied specification, with the module rays deleted and no
+product data merged into the picture.
+**Choice.** Implemented as specified. `prism.wgsl` is now self-contained: it owns the prism, the ray, the refraction
+and the dispersion, and takes one uniform — viewport, clock, device pixel ratio. Deleted with the seven rays:
+`prismGeometry.ts` and its tests, `uniforms.ts` and its tests, `PrismWebGPU.tsx`, `usePrismFrame.ts`, the module
+legend, the activity plumbing in `OverviewLive.tsx`, and `PrismCanvas2D.tsx` — the Canvas 2D twin drew the scene that
+was removed, so keeping it would have contradicted the instruction. `renderer.ts` is the pipeline setup, structured
+after the official example's own renderer. Two things the specification did not say, decided here: the beam's
+elevation and the dispersion constant are not free parameters but the output of the refraction maths (§5.1), and the
+surface is sized explicitly because vgpu only enables auto-resize for a canvas that already has a numeric
+`clientWidth` when the surface is created, which a freshly mounted React subtree may not.
+**Consequences.** The hero no longer says anything about the product: no module colours, no per-event pulse, no
+legend, and the accessible description is about light rather than about webhooks. A browser without WebGPU now shows
+a black canvas inside the hero card instead of a drawn fallback — Safari before 17, Firefox without the flag, and any
+machine whose adapter is unavailable. The card's heading and the events/actions counters are HTML around the canvas
+and were left alone. Restoring either the fallback or the module rays is a revert of this entry.

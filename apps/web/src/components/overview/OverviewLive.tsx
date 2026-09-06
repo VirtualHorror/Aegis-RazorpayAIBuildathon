@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { api, describeFailure } from "@/lib/api";
 import { formatCount } from "@/lib/format";
-import { activityModule, actionOf, bumpMetrics, flashGroup, upsertAction } from "@/lib/overview";
+import { actionOf, bumpMetrics, flashGroup, upsertAction } from "@/lib/overview";
 import { useStreamEffect } from "@/lib/sse";
 import type { ActionRow, MetricsSummary, MetricsWindow } from "@/lib/types";
 import { KpiGrid } from "./KpiGrid";
@@ -26,7 +26,6 @@ const WINDOWS: readonly { value: MetricsWindow; label: string }[] = [
   { value: "all", label: "All time" },
 ];
 const RECONCILE_MS = 1_200;
-const ACTIVE_MS = 1_200;
 
 /**
  * Overview state (Checklist 18.1).
@@ -41,9 +40,7 @@ export function OverviewLive({ initialMetrics, initialActions, initialError }: O
   const [actions, setActions] = useState(initialActions);
   const [freshActions, setFreshActions] = useState<ReadonlySet<string>>(() => new Set());
   const [flash, setFlash] = useState({ events: 0, actions: 0, x402: 0 });
-  const [activeModules, setActiveModules] = useState<ReadonlySet<string>>(() => new Set());
   // The renderers decay their own pulses from these timestamps; the set above only drives the HTML labels.
-  const [activityAt, setActivityAt] = useState<Record<string, number>>({});
   const [tick, setTick] = useState(0);
   const reconcile = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -72,16 +69,6 @@ export function OverviewLive({ initialMetrics, initialActions, initialError }: O
       setMetrics((current) => (current ? bumpMetrics(current, event.name) : current));
       const group = flashGroup(event.name);
       if (group) setFlash((current) => ({ ...current, [group]: current[group] + 1 }));
-      const moduleName = activityModule(event);
-      if (moduleName) {
-        setActivityAt((current) => ({ ...current, [moduleName]: Date.now() }));
-        setActiveModules((current) => new Set(current).add(moduleName));
-        setTimeout(() => setActiveModules((current) => {
-          const copy = new Set(current);
-          copy.delete(moduleName);
-          return copy;
-        }), ACTIVE_MS);
-      }
       const action = actionOf(event.data);
       if (action) {
         setActions((current) => upsertAction(current, action));
@@ -102,7 +89,7 @@ export function OverviewLive({ initialMetrics, initialActions, initialError }: O
 
   return (
     <div className="flex flex-col gap-4">
-      <PrismHero activity={activityAt} active={activeModules} eventsIn={eventsIn} actionsOut={actionsOut} />
+      <PrismHero eventsIn={eventsIn} actionsOut={actionsOut} />
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-medium text-fg-muted">{metrics ? `Showing ${WINDOWS.find((entry) => entry.value === metrics.window)?.label.toLowerCase() ?? metrics.window}` : "Metrics"}</h2>
