@@ -17,7 +17,7 @@ psql "$DATABASE_URL" -c "select count(*) from compliance_flags"   # optional: a 
   record at night, run `pnpm demo --allow-quiet-hours` — it widens the window through the public guardrail API, says so
   on screen, and restores 21:00–08:00 on exit. **Do not** edit the database to fake it.
 - Terminal at ~110 columns, large font. Browser on `http://localhost:3000` in a second window.
-- `NEXT_PUBLIC_PRISM_MODE=gpu` if the recording machine has a real GPU; otherwise the hero takes the Canvas 2D path
+- Nothing to set for the hero: it is static SVG and records the same on any machine (D-086)
   and that is fine.
 - One dry run first. The x402 per-payer daily cap is real (₹5,000/payer/day); `pnpm demo` uses a fresh payer per run,
   so repeated rehearsals do not trip it.

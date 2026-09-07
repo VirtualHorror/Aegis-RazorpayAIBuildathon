@@ -49,56 +49,29 @@ Typography: `Geist Sans` for UI (`next/font`), `Geist Mono` for ids, amounts, JS
 
 ## 5. Flourishes (exact specs)
 
-### 5.1 `PrismHero` — the vgpu.sh hero, replicated (reference 1)
+### 5.1 `PrismHero` — the prism, drawn (reference 1)
 
-**Superseded on 2026-09-07 by the project owner (D-083).** The earlier design in this section adapted the reference
-into Aegis's own metaphor: seven module-coloured rays, a legend that lit per module, a Canvas 2D twin. That was
-overruled. The hero is now a strict replica of the vgpu.sh landing shader and carries no product data at all.
+**Rewritten on 2026-09-07 by the project owner (D-086).** The two earlier designs in this section are gone: the
+Aegis-metaphor shader with a Canvas 2D twin (T22), and the 1:1 replica of the vgpu.sh landing shader that replaced it
+(D-083 → D-085). Both were WebGPU. The hero is now a static SVG with no GPU path at all, and `vgpu` has left the
+project — it ships no React component, so keeping it would have meant keeping a hand-written pipeline, which was the
+thing being removed.
 
-The specification, in full:
+The whole flourish is `components/prism/PrismHero.tsx`. There is no renderer, no canvas, no shader and no fallback.
 
 | | |
 |---|---|
-| Stage | true black (`#000000`); no ambient term, no vignette, no starfield |
-| Geometry | one solid equilateral glass prism, centre-right, as a signed distance field: the triangle swept along an extrusion so the far face and the three struts read through the transparent near face |
-| Edges | derivative-based anti-aliasing (`length(vec2f(dpdx, dpdy))` of the SDF, taken in uniform control flow) |
-| Light | a single intense white volumetric ray entering from the side; an impact bloom where it meets the outer wall; the refracted ray crossing the glass; a caustic where it leaves the far wall |
-| Dispersion | on exit the ray becomes a wide continuous spectrum, red through violet, integrated over 48 wavelengths rather than drawn as discrete bands |
-| Dust | tiny drifting motes that emit nothing and are visible only where the light field reaches them |
-| Interaction | the pointer steers the beam: horizontally it slides where the beam lands on the entry face, vertically it sets the elevation. Mouse, pen and touch all arrive as pointer events; the beam eases toward the cursor with a 0.12 s time constant and glides back to rest when it leaves |
-| Display | Lottes tonemap, linear→sRGB, interleaved-gradient dither, a screen-edge fade on all four sides |
-
-Physics, because it dictates the composition and bounds the interaction: an equilateral prism deviates light by at
-least about 37°, so a shallow beam arriving from above meets the far wall past the critical angle, totally internally
-reflects, and produces no spectrum at all. Snell twice gives `r1 + r2 = A`, so the shallowest beam whose violet end
-still escapes satisfies `r1 > A − asin(1 / n_violet)`; with `A = 60°` and `n_violet = 1.80` that is `r1 > 26.25°`,
-an incidence of `46.87°`, an elevation of `16.87°`. The shader derives exactly that floor every frame from the
-apex angle and the indices, keeps `BEAM_MARGIN` (3.4°) in hand, and clamps the pointer between it and `BEAM_ELEVATION_MAX`
-(45.8°, short of grazing). Inside that window the fan runs from 21° wide at the shallow end to about 9° at the steep
-end and every wavelength gets out; outside it there would be no spectrum at all. `N_SPREAD = 0.30` is what opens the
-fan that far, where real glass would give two or three degrees.
-
-Implementation — a multi-pass, mesh-based pipeline (D-085). The single fullscreen shader was replaced because a
-distance field evaluated per pixel, with the spectrum integrated over 48 discrete wavelengths, separated into visible
-rays in the far field. Geometry does not: a rasterised triangle interpolates.
-
-| Pass | Target | What it draws |
-|---|---|---|
-| environment | 512×256 equirect, `rgba16float`, rendered once | a dark studio: a tight key, a cool rim, a warm bounce |
-| scene | canvas size, `rgba16float` | the beam as geometry and the prism as a mesh, in painter's order |
-| bright | half size | the scene above a soft-kneed threshold |
-| blur × 2 | half size, ping-ponged | a separable Gaussian, across then down |
-| composite | the canvas | scene + bloom, Lottes tonemap, sRGB, edge fade, dither |
-
-- `components/prism/optics.wgsl` — a pure WGSL module: the prism, the ray, Snell twice, the spectrum, the oblique projection, and the derived steering clamp. Imported by both the beam and the glass, so one description of the physics feeds every pass.
-- `components/prism/beam.wgsl` — the light as quads generated in the vertex stage: the shaft, the segment inside the glass, 64 overlapping ribbons across the spectrum, and two impact billboards. Additive, with a two-lobe Gaussian across each quad for a core inside a halo.
-- `components/prism/glass.wgsl` — the prism as a triangular-prism mesh (two caps, three sides) generated from `vertex_index`, shaded two-sided against the environment map: Fresnel between a reflection and a refraction through the body, plus a grazing bevel. Drawn in two halves, far then near, so the back faces read through the front ones without a depth buffer.
-- `components/prism/{env,bright,blur,composite}.wgsl` — the studio and the bloom chain.
-- `components/prism/renderer.ts` — targets, pass order, pointer listeners, easing and resize. It reports the pointer in 0..1 of the canvas and never computes an angle, so it cannot steer the beam anywhere the optics module has not allowed.
-- `components/prism/PrismHero.tsx` — owns the canvas and its lifetime, nothing else.
-- `components/prism/prismShader.test.ts` — every pass resolves, the beam and the glass have vertex stages, the clamp is still derived, the renderer sets exactly the uniforms the shaders declare, and the passes run in the order a bloom needs.
-
-There is no second renderer: a browser without WebGPU shows the card with a black canvas (D-083).
+| Card | forces `.dark` on itself (the `KitchenSink` pattern), so it is a dark slab in both themes — coloured light does not read on a light ground |
+| Layout | two columns at `md`: headline, one sentence of copy and the two counters on the left; the picture on the right. Stacks below `md`; verified at 360px with no horizontal overflow |
+| Counters | `eventsIn` / `actionsOut` as `<dl>` readouts, Geist Mono, `tabular-nums`, reversed so the number sits above its label. `—` when metrics have not loaded (C-F5) |
+| Stage | a 640×250 SVG, `aspect-[64/25]` on the panel so the viewBox ratio and the CSS ratio match and nothing is ever cropped; a radial studio pool over `#04050b` |
+| Geometry | an equilateral prism (side 120) apex-up, left of centre, plus its far face offset by `(-15, -11)` and three struts at 9–12% opacity — what makes the triangle read as a solid block |
+| Light | a beam entering 12° below horizontal from off-frame, a refracted segment across the glass, and impact blooms at the entry and exit points |
+| Dispersion | seven rays, 15° to 39° below horizontal, each a wide soft stroke under a bright core, in `mix-blend-mode: screen` so they pile into white at the exit |
+| Colour | the rays are `var(--mod-*)` in spectral order — red `checkout_recovery` through magenta `nlq` — so the picture *is* the legend: the same seven colours as the badges, the feed rails and the sidebar swatches |
+| Falloff | one elliptical mask centred on the exit point, `scale(1 0.42)`: light carries much further across the panel than down it, so the shallow rays crossing the full width and the steep rays dropping to the base both fade to nothing just inside the frame |
+| Motion | one thing only — `.beam-flow` in `globals.css`, a travelling dash on the entry beam (events arriving), 2.4s linear, and `animation: none` under `prefers-reduced-motion` with the rest (C-F4) |
+| Accessibility | the SVG is `role="presentation" aria-hidden`; the headline and the counters carry the message in real text |
 
 ### 5.2 `HalftoneField` — vanishing/appearing pattern (reference 2)
 What the reference does: a regular grid of tiny white dots on black (~14 px pitch). An invisible smooth field (a slowly flowing ribbon/aurora shape) moves across; where the field is bright the dots grow until they merge into solid white, where it is dark they shrink to pinpoints. The result is a shape that appears to be "printed" onto the dot matrix and dissolves as it passes.
@@ -138,5 +111,6 @@ Implementation (`components/ui/GlowInput.tsx`):
 - **T19–T21 (2026-09-06, Claude).** Action and approval surfaces follow §4: module colour appears only as a 3px rail and a badge, never as a fill behind text; guard rules render as a checklist with limit against actual; the outbound payload carries a low-contrast SIMULATED watermark over the JSON (C-B7). Settings uses a purpose-built confirm dialog, never `window.confirm` (§4). Money is typed in rupees and stored in paise; every field shows the stored raw value beneath it so the UI never hides what the API holds.
 - **T22 (2026-09-06, Claude).** `PrismHero` per §5.1: `prismGeometry.ts` is the single source of the scene for both renderers (Snell bend at index 1.5, 18° fan, resting angle 10° when the pointer leaves), `prism.wgsl` draws it as SDF capsules with additive colour through `vgpu`'s `effect()`, and `PrismCanvas2D` draws the identical scene with `lineTo`, `shadowBlur` and `globalCompositeOperation: "lighter"`. `PrismHero` picks the path with `useSyncExternalStore` (no setState-in-effect), falls back on an `init()` failure, honours `NEXT_PUBLIC_PRISM_MODE`, caps DPR at 2, and pauses offscreen or when the tab is hidden. Deviation from §5.1: the fan-end labels became a right-hand legend with colour swatches, because the fan sweeps with the pointer and a label pinned to a ray ends up naming the wrong colour; the legend still lights per module on a live event. A new `--on-accent` token keeps text on accent fills above 4.5:1 in both themes (B-018).
 - **T25 (2026-09-06, Claude).** `SandboxPill` joins the top bar between the LLM pill and the kill switch: icon-only below `md` (the 360px bar has ~10px to spare, B-025), `Live · acc_…` in accent from `md`, state always in the accessible name. `SandboxModal` follows `ConfirmDialog`: `role="dialog"`, focus moves to the first radio and back on close, Escape and backdrop close, body scroll locked, portalled to `document.body` because the header's `backdrop-blur` is a containing block for `fixed`. Sheet-style (bottom-anchored, full width) below `sm`, centred card above; inputs match the settings form; secrets are `type="password"` with one "show while typing" checkbox; errors use `aria-invalid` + `aria-describedby` and the first invalid field takes focus.
+- **Prism hero, static SVG (2026-09-07, Claude, on the project owner's instruction).** The bespoke WebGPU pipeline was deleted in place: seven `.wgsl` files, `renderer.ts`, `prismShader.test.ts`, `src/wgsl-env.d.ts`, the Turbopack `*.wgsl` loader rule, `NEXT_PUBLIC_PRISM_MODE`, and the `vgpu` / `@vgpu/wgsl` / `@webgpu/types` dependencies with their `pnpm-workspace.yaml` build denials. T23–T25 were untouched and no commit was reverted. §5.1 above is the new specification and `PrismHero.tsx` follows it. Checked in Chrome at 1440 and 360, both themes: the fan fades inside the frame on every edge, no horizontal overflow, the seven rays resolve to the exact module tokens, and `.beam-flow` carries `animation: none` under `prefers-reduced-motion`. The two entries below are kept for the record; neither has code behind it any more.
 - **Prism hero replica (2026-09-07, Claude, on the project owner's instruction).** §5.1 above is the specification and the code follows it exactly; D-083 records what was removed to get there. The earlier pass below is kept for the record.
 - **Prism hero pass (2026-09-06, Claude).** The WebGPU path was running and looked nothing like the reference: a milky blue field, a flat wireframe triangle and thin flat rays. `prism.wgsl` was rewritten against the official vgpu example `triangle-led-front` (`npx vgpu examples pull triangle-led-front`) — Lottes tonemap and linear→sRGB from its `color-utils.wgsl`, the signed triangle SDF from `geometry.wgsl`, interleaved-gradient dithering from `direct-triangle-raycast.wgsl`, and both the derivative-based anti-aliased silhouette and the vertical edge fade from `themes/dark/main-scene-floor.wgsl`. The scene stays Aegis's own (§5.1: one beam in, seven module rays out); the reference's own scene is LED edges lighting a floor and was not copied (D-082). What changed visually: a near-black stage, a **solid** glass prism (the triangle swept along a new `depth` vector, so the far face and the three struts are visible through the glass), a bright thin beam with warm/cool dispersion fringes that separate away from the glass, an impact bloom, a caustic where the bent ray leaves the far wall, and a fan that opens out of the exit point instead of seven equal lines. `PrismCanvas2D` draws the same solid on the same stage. The legend gained a right-hand scrim because the brighter fan ran under it (B-018 again).

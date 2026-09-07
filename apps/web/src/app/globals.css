@@ -197,6 +197,20 @@ body {
   animation: glow-spin 4.66s linear infinite, glow-pulse 1.2s ease-in-out infinite;
 }
 
+/* PrismHero: packets running down the entry beam — the event stream arriving at the glass (Design.md §5.1).
+   The dash period is 30 user units, so a 60-unit travel loops seamlessly. */
+@keyframes beam-flow {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -60;
+  }
+}
+.beam-flow {
+  animation: beam-flow 2.4s linear infinite;
+}
+
 /* Skeleton shimmer. */
 @keyframes shimmer {
   from {
@@ -257,6 +271,7 @@ body {
 
 /* Reduced motion: every continuous animation stops; micro-interactions keep their end state (C-F4, Design.md §6). */
 @media (prefers-reduced-motion: reduce) {
+  .beam-flow,
   .glow-halo,
   .glow-halo.is-focused,
   .glow-halo.is-loading,

@@ -9,10 +9,6 @@ allowBuilds:
   unrs-resolver: true
   sharp: true
   "@tailwindcss/oxide": true
-  # vgpu's browser path needs no native code. `@vgpu/adapter-node` and `webgpu` build Dawn for headless Node
-  # rendering, which this project does not use, so their install scripts stay denied (D-069).
-  "@vgpu/adapter-node": false
-  webgpu: false
 
 # pnpm 11 supply-chain policy blocks very fresh releases; these pins were reviewed on 2026-09-05 (Decisions D-014).
 minimumReleaseAgeExclude:

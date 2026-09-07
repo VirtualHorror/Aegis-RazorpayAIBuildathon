@@ -22,7 +22,7 @@
 | D-015 | 2026-09-05 | Pin TypeScript 5.9.x, not 7.x | accepted |
 | D-016 | 2026-09-05 | zod 4 as the single validation library (shared package) | accepted |
 | D-017 | 2026-09-05 | Vitest 5 for unit + integration tests | accepted |
-| D-018 | 2026-09-05 | vgpu (WebGPU) for the prism hero with a mandatory Canvas 2D fallback | accepted |
+| D-018 | 2026-09-05 | vgpu (WebGPU) for the prism hero with a mandatory Canvas 2D fallback | superseded by D-086 |
 | D-019 | 2026-09-05 | Halftone "vanishing pattern" implemented in Canvas 2D, not GPU | accepted |
 | D-020 | 2026-09-05 | `next-themes` for theme switching | accepted |
 | D-021 | 2026-09-05 | `Bug/Feature.md` is stored as `Bug-Feature.md` | accepted |
@@ -519,3 +519,39 @@ is now a Gaussian and an environment lookup rather than 120 field evaluations. T
 change as the beam moves, which is what the environment map was for. Cost: seven shader files instead of one, four
 offscreen targets, and a pipeline that must be pre-warmed — all of which `renderer.ts` owns. A browser without WebGPU
 still shows a black canvas (D-083).
+
+### D-086 · The hero is a static SVG, and vgpu leaves the project (2026-09-07)
+
+**Context.** The project owner found the official vgpu repository (`vercel-labs/vgpu`) and the post describing its
+mesh-based approach, and judged the bespoke pipeline this project had grown — seven WGSL files, five passes, four
+offscreen targets, an equirectangular environment map and a hand-derived Snell clamp (D-082 → D-085) — too heavy and
+the wrong approach for a merchant dashboard. The instruction was to strip the custom WebGPU code in place, keeping
+T23–T25 intact, and to replace the visual either with an official vgpu React component or with a static fallback.
+
+**Choice.** A static SVG, because there is no vgpu React component to plug in: `vgpu@0.4.0` exports only
+`.`, `./node`, `./mock`, `./scene`, `./client`, `./core` and `./three`, all of them the imperative `init()` / `effect()`
+/ `draw()` / `surface()` API — nothing React-shaped, nothing that renders a prism without a shader written by hand.
+Since a plug-and-play component does not exist, keeping the dependency would have meant keeping a hand-written
+pipeline, which is exactly what was being removed. So `vgpu`, `@vgpu/wgsl` and `@webgpu/types` are gone from
+`apps/web/package.json`, the `*.wgsl` Turbopack loader rule is gone from `next.config.ts`, the `@vgpu/adapter-node`
+and `webgpu` build denials are gone from `pnpm-workspace.yaml` (D-069 no longer has a subject), and
+`NEXT_PUBLIC_PRISM_MODE` is gone from `.env.example` (D-018's two-path switch has one path now).
+
+`PrismHero.tsx` is the whole flourish: a 640×250 SVG of a solid glass prism, one beam entering its left face and a
+seven-ray spectrum leaving its right, beside the headline and the two live counters. Three things make it a
+deliberate picture rather than a placeholder. *The seven rays carry the module tokens* — `var(--mod-*)`, the same
+colours as the badges, the feed rails and the sidebar legend — so the hero doubles as the legend and matches the
+copy it sits next to ("Seven specialists out"); this reverses D-083's "no product meaning in the hero", which was a
+constraint of replicating someone else's shader. *The falloff is one elliptical mask* centred on the exit point,
+squashed to 0.42 vertically, so shallow rays crossing the full width and steep rays dropping to the base both fade
+out just inside the frame instead of being cut by it. *The panel's CSS aspect ratio equals the viewBox ratio*, so the
+scene is never cropped at any breakpoint. The card forces `.dark` on itself the way `KitchenSink` forces a theme on a
+subtree, because coloured light only reads on a dark ground.
+
+**Consequences.** The hero has no GPU path to detect, no fallback to maintain, no render loop, and no canvas: it is
+markup, it server-renders, and it looks the same on this GPU-less VM as anywhere else, which is what C-F4 was always
+asking for. The frontend loses 13 packages and a build-time WGSL loader. `prismShader.test.ts` went with the shaders
+it pinned; nothing replaces it, because there is no longer a two-sided contract to drift — the geometry is constants
+in one file that the compiler checks. The one animation left is a travelling dash on the entry beam, off under
+`prefers-reduced-motion` like every other continuous animation in `globals.css`. D-069, D-070, D-082, D-083, D-084 and
+D-085 are all now historical: nothing they decided still has code behind it.

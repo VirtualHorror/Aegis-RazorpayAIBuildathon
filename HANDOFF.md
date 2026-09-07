@@ -133,7 +133,7 @@ Kill by PID from `ss`, never `pkill -f` (it once matched and killed the tool she
 | `apps/web/src/lib/sse.ts` | One `EventSource` per tab shared by all hooks; owns the 1 s→10 s backoff |
 | `apps/web/src/lib/types.ts` | Wire types for every row the UI renders; a renamed API column fails typecheck here first |
 | `apps/web/src/components/prism/prismGeometry.ts` | The only source of the prism scene; both renderers consume it |
-| `apps/web/src/components/prism/PrismHero.tsx` | Picks WebGPU or Canvas 2D, honours `NEXT_PUBLIC_PRISM_MODE` |
+| `apps/web/src/components/prism/PrismHero.tsx` | The whole hero: a static SVG prism, no GPU path (D-086) |
 | `apps/api/src/routes/approvals.ts` | Actions, events, approvals, guardrails and the guardrail history; holds `cursorOf` (B-012) |
 | `apps/api/src/routes/sim.ts` | `/sim/run` and the dev-only `/sim/x402-sign`; not mounted in production |
 | `apps/api/src/orchestrator/projections/invoices.ts` | `merchantFloorPaise` — the fix that made the negotiator demonstrable |
@@ -227,12 +227,9 @@ then switch to "3m ago"; every element using it carries `suppressHydrationWarnin
 
 ## Warnings
 
-- **WebGPU is unproven on hardware.** This VM reports `navigator.gpu` but `requestAdapter()` returns null, so
-  `PrismWebGPU` always falls back and logs
-  `[aegis] WebGPU prism unavailable, using the Canvas 2D renderer: navigator.gpu.requestAdapter() returned null`.
-  That message is expected here, not a bug. On a GPU machine set `NEXT_PUBLIC_PRISM_MODE=gpu` to force the path.
-  `npx vgpu check src/components/prism/prism.wgsl` parses and reflects the shader but skips device validation
-  (`VGPU-WGSL-VALIDATE-NO-DEVICE`) for the same reason (DV-010).
+- **WebGPU is no longer used anywhere.** Resolved on 2026-09-07 (D-086): the hero is a static SVG, `vgpu` and its
+  WGSL loader are out of the project, and there is nothing left to feature-detect or validate. This VM's null
+  `requestAdapter()` and DV-010 stopped mattering; the caveat is kept here only so the earlier handoffs read straight.
 - **The model proxy is flaky.** `gpt-5.6` and `gpt-5.4-mini` return 503; only `gpt-5.6-luna|sol|terra` complete. If
   answers start coming back degraded, probe with a `curl` to `$OPENAI_API_BASE/chat/completions` before assuming a code
   problem.

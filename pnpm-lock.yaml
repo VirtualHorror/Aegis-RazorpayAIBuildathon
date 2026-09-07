@@ -99,9 +99,6 @@ importers:
       react-dom:
         specifier: 19.2.8
         version: 19.2.8(react@19.2.8)
-      vgpu:
-        specifier: 0.4.0
-        version: 0.4.0(supports-color@7.2.0)
     devDependencies:
       '@tailwindcss/postcss':
         specifier: ~4.3.3
@@ -115,12 +112,6 @@ importers:
       '@types/react-dom':
         specifier: ~19.2.0
         version: 19.2.7(@types/react@19.2.18)
-      '@vgpu/wgsl':
-        specifier: 0.4.0
-        version: 0.4.0(@vgpu/adapter-node@0.4.0(supports-color@7.2.0))
-      '@webgpu/types':
-        specifier: ~0.1.72
-        version: 0.1.72
       eslint:
         specifier: ^9
         version: 9.39.5(jiti@2.7.0)(supports-color@7.2.0)
@@ -721,14 +712,6 @@ packages:
     resolution: {integrity: sha512-9I2Zn6+NJLfaGoz9jN3lpwDgAYvfGeNYdbAIjJOqzs4Tpc+VU3Jqq4IofSUBKajiDS8k9fZIg18/z13mpk1bsA==}
     engines: {node: '>=8'}
 
-  '@modelcontextprotocol/core@2.0.0':
-    resolution: {integrity: sha512-pJCEwGG7Lfr/+PQp9ZTwKXNeO5wzbfKL7H3MYpCorM4oFBoQrdjnBgEoqG+RjhsvS1FKrDbKux+M1HhlnGWqcA==}
-    engines: {node: '>=20'}
-
-  '@modelcontextprotocol/server@2.0.0':
-    resolution: {integrity: sha512-YhHWdHfpFMQfd0prsEnxKeS3Qz3ytIGmsS0sth4KDjnacIT7hxk6hXHkJ9KysxlkvTM+WZAtQbbcUhdoP4Hvtw==}
-    engines: {node: '>=20'}
-
   '@napi-rs/wasm-runtime@1.2.3':
     resolution: {integrity: sha512-UMduMbqO5s5zF2NkNacMT/yK5Y5QiKvWr2+50bzIIxFDwVJ2h49b+oyjaCGPhJxd2/gC2x39EHv/gHVuu36x2Q==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=23.5.0}
@@ -1230,26 +1213,6 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@vgpu/adapter-mock@0.4.0':
-    resolution: {integrity: sha512-fqOEHCZAt+mMyOpgAA5inFWSoB9siO1LQIq9t+i6iemLbp2VBEEWlhZXCh3Hf+UDqbkut8kQaDrMPLt2J9LpvA==}
-
-  '@vgpu/adapter-node@0.4.0':
-    resolution: {integrity: sha512-A6Rj5Ge8Uw6BFrRBiJa8iRTI4fSxkz2JyR1rAhTl+kUNMeyAxrMlItqsUdVcaLe3fJPUh0sU6cr9zzHjHvuVUA==}
-
-  '@vgpu/core@0.4.0':
-    resolution: {integrity: sha512-yBkqlNzTRYaRRzOAsootOmppzsDZytL5Xe09rZfV60zJc4FTr5jWZmGCrm/zlWM/1wEKocDtKloVKfKD+2TNPw==}
-
-  '@vgpu/wgsl-std@0.4.0':
-    resolution: {integrity: sha512-a0EkK1y5VeA1jCEjPxe7BW7zTebL1UKLIQlEdxqrb8T1Zr+xO7VBe5mTNsuJtKWxgF+lANUqLwScyN+Fs4ooFw==}
-
-  '@vgpu/wgsl@0.4.0':
-    resolution: {integrity: sha512-19aESov4jNukukAlbE9VH34T/2VcIzmQPZ45WyphtrUMevFacAqTVU6qJVAP/YGX3rjQaL7Eq4jdvEhtOxNEPg==}
-    peerDependencies:
-      '@vgpu/adapter-node': '>=0.1.6 <1.0.0'
-    peerDependenciesMeta:
-      '@vgpu/adapter-node':
-        optional: true
-
   '@vitest/mocker@5.0.0':
     resolution: {integrity: sha512-66PGTMIiVJP3t4a5yxU9qPtf7MdTBs8jmToMvy+HVflB3Yy13WJZTtPePdvU+wjRV02SKK5doLbSA6o9pwOmiA==}
     peerDependencies:
@@ -1263,9 +1226,6 @@ packages:
 
   '@vitest/spy@5.0.0':
     resolution: {integrity: sha512-uy+luWBAPw9XfthoHi5AkfHUnuPYEESjl0p/r+meoBnU8bxg5GDQ3Ey8MjcJ6sqahkL4PFyrvfMJJBw7LbU06g==}
-
-  '@webgpu/types@0.1.72':
-    resolution: {integrity: sha512-0cF7RFM2edNoiIS1ODJp0/Gzv4/xSXhwoR0YCza+OWpJWtn4wmo9DvK91aLlH9+uUnwIriP7ZiC3WitmyhuzBw==}
 
   abstract-logging@2.0.1:
     resolution: {integrity: sha512-2BjRTZxTPvheOvGbBslFSYOUkr+SjPtOnrLP33f+VIWLzezQpZcqVg7ja3L4dBXmzzgwT+a029jRx5PCi3JuiA==}
@@ -2562,14 +2522,6 @@ packages:
     resolution: {integrity: sha512-r34yH/GlQpKZbU1BvFFqOjhISRo1MNx1tWYsYvmj6KIRHSPMT2+yHOEb1SG6NMvRoHRF0a07kCOox/9yakl1vg==}
     hasBin: true
 
-  pixelmatch@7.2.0:
-    resolution: {integrity: sha512-xhcb4yHu9sM/G7foGzoLtXYcC0zHEaOXXjRKhGup0fw78Nf2Tkiapv4EQyMzrbcmQPsllAI7DbFY2UT7PlI9Pg==}
-    hasBin: true
-
-  pngjs@7.0.0:
-    resolution: {integrity: sha512-LKWqWJRhstyYo9pGvgor/ivk2w94eSjE3RGVuzLGlr3NmD8bf7RcYGze1mNdEHRP6TRP6rMuDHk5t44hnTRyow==}
-    engines: {node: '>=14.19.0'}
-
   possible-typed-array-names@1.1.0:
     resolution: {integrity: sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==}
     engines: {node: '>= 0.4'}
@@ -2972,15 +2924,6 @@ packages:
   uri-js@4.4.1:
     resolution: {integrity: sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg==}
 
-  vgpu@0.4.0:
-    resolution: {integrity: sha512-U8ofyb2FdiLpbkMJrGSu2PWu/fmiKsXYYpp3agFE3TjM5+6o7aZFD1PBl8XxxnSeN7br/Izmow7fcEmYJTpxSw==}
-    hasBin: true
-    peerDependencies:
-      three: '>=0.180.0 <0.200.0'
-    peerDependenciesMeta:
-      three:
-        optional: true
-
   vite@8.2.2:
     resolution: {integrity: sha512-cFKLV/PRgAUlIRm5WjMjJ86jrftzpqcgH+Us+DS8mI3CDNiH30Whrz8uHL3+MOLPAgqbMBAqWdAHAphOAM+z/Q==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -3064,12 +3007,6 @@ packages:
         optional: true
       jsdom:
         optional: true
-
-  webgpu@0.4.0:
-    resolution: {integrity: sha512-F5pimn3Aoi0zWjuRdiVs5TnrUwSzD2lESBohsIUsqyitWkGRQlXU2fhV6ycXlQTa1bvAf3sjqiUpBEpmSQ5ptA==}
-
-  wgpu-matrix@3.4.2:
-    resolution: {integrity: sha512-IfZFbG7olEYBD76VCZy2TzqM57GKy3LT++AZh37tMHPPByO6R2h61zXGBZFNPi2IzxNivNi8y5dvze5PjaczjA==}
 
   which-boxed-primitive@1.1.1:
     resolution: {integrity: sha512-TbX3mj8n0odCBFVlY8AxkqcHASw3L60jIuF8jFP78az3C2YhmGvqbHBpAjTRH2/xqYunrJ9g1jSyjCjpoWzIAA==}
@@ -3618,15 +3555,6 @@ snapshots:
 
   '@lukeed/ms@2.0.2': {}
 
-  '@modelcontextprotocol/core@2.0.0':
-    dependencies:
-      zod: 4.5.4
-
-  '@modelcontextprotocol/server@2.0.0':
-    dependencies:
-      '@modelcontextprotocol/core': 2.0.0
-      zod: 4.5.4
-
   '@napi-rs/wasm-runtime@1.2.3(@emnapi/core@1.10.0)(@emnapi/runtime@1.10.0)':
     dependencies:
       '@emnapi/core': 1.10.0
@@ -4059,33 +3987,6 @@ snapshots:
   '@unrs/resolver-binding-win32-x64-msvc@1.12.2':
     optional: true
 
-  '@vgpu/adapter-mock@0.4.0(@vgpu/adapter-node@0.4.0(supports-color@7.2.0))':
-    dependencies:
-      '@vgpu/core': 0.4.0(@vgpu/adapter-node@0.4.0(supports-color@7.2.0))
-    transitivePeerDependencies:
-      - '@vgpu/adapter-node'
-
-  '@vgpu/adapter-node@0.4.0(supports-color@7.2.0)':
-    dependencies:
-      '@vgpu/core': 0.4.0(@vgpu/adapter-node@0.4.0(supports-color@7.2.0))
-      webgpu: 0.4.0(supports-color@7.2.0)
-    transitivePeerDependencies:
-      - supports-color
-
-  '@vgpu/core@0.4.0(@vgpu/adapter-node@0.4.0(supports-color@7.2.0))':
-    dependencies:
-      '@vgpu/wgsl': 0.4.0(@vgpu/adapter-node@0.4.0(supports-color@7.2.0))
-    transitivePeerDependencies:
-      - '@vgpu/adapter-node'
-
-  '@vgpu/wgsl-std@0.4.0': {}
-
-  '@vgpu/wgsl@0.4.0(@vgpu/adapter-node@0.4.0(supports-color@7.2.0))':
-    dependencies:
-      '@vgpu/wgsl-std': 0.4.0
-    optionalDependencies:
-      '@vgpu/adapter-node': 0.4.0(supports-color@7.2.0)
-
   '@vitest/mocker@5.0.0(vite@8.2.2(@types/node@24.9.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13))':
     dependencies:
       '@jridgewell/trace-mapping': 0.3.31
@@ -4096,8 +3997,6 @@ snapshots:
       vite: 8.2.2(@types/node@24.9.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)
 
   '@vitest/spy@5.0.0': {}
-
-  '@webgpu/types@0.1.72': {}
 
   abstract-logging@2.0.1: {}
 
@@ -5595,12 +5494,6 @@ snapshots:
       sonic-boom: 4.2.1
       thread-stream: 4.2.0
 
-  pixelmatch@7.2.0:
-    dependencies:
-      pngjs: 7.0.0
-
-  pngjs@7.0.0: {}
-
   possible-typed-array-names@1.1.0: {}
 
   postcss@8.5.23:
@@ -6112,22 +6005,6 @@ snapshots:
     dependencies:
       punycode: 2.3.1
 
-  vgpu@0.4.0(supports-color@7.2.0):
-    dependencies:
-      '@modelcontextprotocol/server': 2.0.0
-      '@vgpu/adapter-mock': 0.4.0(@vgpu/adapter-node@0.4.0(supports-color@7.2.0))
-      '@vgpu/adapter-node': 0.4.0(supports-color@7.2.0)
-      '@vgpu/core': 0.4.0(@vgpu/adapter-node@0.4.0(supports-color@7.2.0))
-      '@vgpu/wgsl': 0.4.0(@vgpu/adapter-node@0.4.0(supports-color@7.2.0))
-      '@vgpu/wgsl-std': 0.4.0
-      '@webgpu/types': 0.1.72
-      pixelmatch: 7.2.0
-      pngjs: 7.0.0
-      wgpu-matrix: 3.4.2
-      zod: 4.5.4
-    transitivePeerDependencies:
-      - supports-color
-
   vite@8.2.2(@types/node@24.9.2)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13):
     dependencies:
       lightningcss: 1.33.0
@@ -6162,15 +6039,6 @@ snapshots:
       '@types/node': 24.9.2
     transitivePeerDependencies:
       - msw
-
-  webgpu@0.4.0(supports-color@7.2.0):
-    dependencies:
-      '@webgpu/types': 0.1.72
-      debug: 4.4.3(supports-color@7.2.0)
-    transitivePeerDependencies:
-      - supports-color
-
-  wgpu-matrix@3.4.2: {}
 
   which-boxed-primitive@1.1.1:
     dependencies:

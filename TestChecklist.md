@@ -1002,6 +1002,38 @@ systemctl is-enabled pm2-nabhanyu                          # enabled (resurrects
 
 Chrome: open https://aegis.nabhanyubm.tech — the top bar shows `development` and `v1.3.0`, Run demo completes, the Demo-mode pill opens the Sandbox dialog, and the API's log lines carry the client's address rather than 127.0.0.1 (`TRUST_PROXY=loopback`).
 
+## Prism hero — static SVG (verified 2026-09-07, Claude)
+
+The pipeline this replaces, and the checks that proved it, are the section below; none of those commands exist any
+more (`vgpu` is not a dependency). What follows is what was actually run after the rewrite.
+
+```bash
+pnpm install                                  # Packages: -13   (vgpu, @vgpu/wgsl, @webgpu/types and their trees)
+pnpm --filter @aegis/web build                # ✓ Compiled successfully; 13 routes
+pnpm --filter @aegis/web typecheck            # ✓ Types generated successfully; tsc --noEmit exit 0
+pnpm --filter @aegis/web lint                 # eslint --max-warnings 0, exit 0
+pnpm --filter @aegis/web test                 # Test Files 10 passed (10) · Tests 39 passed (39)
+
+# nothing WebGPU-shaped is left anywhere in the app or its config
+grep -rn "PRISM_MODE\|vgpu\|wgsl\|webgpu" -i apps/web/next.config.ts apps/web/package.json \
+  pnpm-workspace.yaml .env.example apps/web/src     # no matches
+```
+
+Chrome (chrome-devtools MCP, dev server on :3100 so the hosted PM2 instance on :3000 was left alone):
+
+| Check | Expect | Observed |
+|---|---|---|
+| 1440×900, dark | the fan fades out inside the frame on every edge | no ray touches a border; the elliptical falloff ends the shallow rays before the right edge and the steep ones above the base |
+| 1280×820, light | the card stays a dark slab and every string stays legible | `.dark` on the card root resolves the tokens; `--fg-muted` on `--surface` is 6.7:1 (C-F6) |
+| 360×760, dark | stacks, nothing cropped, no horizontal scroll | `scrollWidth === clientWidth`; the whole viewBox is visible because the panel's CSS ratio equals it |
+| ray colours | the seven module tokens, in spectral order | `rgb(255,77,77) · (255,176,32) · (61,220,132) · (34,211,238) · (59,130,246) · (168,85,247) · (244,114,182)` |
+| reduced motion | the one animation stops | the compiled `(prefers-reduced-motion: reduce)` rule lists `.beam-flow` and sets `animation: … none !important` |
+| console | no page errors from the hero | only CORS failures against the hosted API on :4000, whose allow-list is `https://aegis.nabhanyubm.tech` rather than the dev port — an artefact of the port, not of this change |
+
+Worth checking by eye, because no metric catches it: the triangle must read as a *solid* block of glass (the far face
+and its three struts showing through the near face) rather than as two overlaid wireframe triangles, and the rays must
+dissolve into the stage rather than stop.
+
 ## Prism hero — multi-pass mesh pipeline (verified 2026-09-07, Claude)
 
 This machine has no GPU, so the checks either force Chrome's software WebGPU or render through vgpu's own software
