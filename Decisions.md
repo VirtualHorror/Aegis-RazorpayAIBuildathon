@@ -22,7 +22,7 @@
 | D-015 | 2026-09-05 | Pin TypeScript 5.9.x, not 7.x | accepted |
 | D-016 | 2026-09-05 | zod 4 as the single validation library (shared package) | accepted |
 | D-017 | 2026-09-05 | Vitest 5 for unit + integration tests | accepted |
-| D-018 | 2026-09-05 | vgpu (WebGPU) for the prism hero with a mandatory Canvas 2D fallback | superseded by D-086 |
+| D-018 | 2026-09-05 | vgpu (WebGPU) for the prism hero with a mandatory Canvas 2D fallback | superseded by D-086, restored in spirit by D-087 |
 | D-019 | 2026-09-05 | Halftone "vanishing pattern" implemented in Canvas 2D, not GPU | accepted |
 | D-020 | 2026-09-05 | `next-themes` for theme switching | accepted |
 | D-021 | 2026-09-05 | `Bug/Feature.md` is stored as `Bug-Feature.md` | accepted |
@@ -520,7 +520,7 @@ change as the beam moves, which is what the environment map was for. Cost: seven
 offscreen targets, and a pipeline that must be pre-warmed — all of which `renderer.ts` owns. A browser without WebGPU
 still shows a black canvas (D-083).
 
-### D-086 · The hero is a static SVG, and vgpu leaves the project (2026-09-07)
+### D-086 · The hero is a static SVG, and vgpu leaves the project (2026-09-07) — superseded by D-087
 
 **Context.** The project owner found the official vgpu repository (`vercel-labs/vgpu`) and the post describing its
 mesh-based approach, and judged the bespoke pipeline this project had grown — seven WGSL files, five passes, four
@@ -555,3 +555,77 @@ it pinned; nothing replaces it, because there is no longer a two-sided contract 
 in one file that the compiler checks. The one animation left is a travelling dash on the entry beam, off under
 `prefers-reduced-motion` like every other continuous animation in `globals.css`. D-069, D-070, D-082, D-083, D-084 and
 D-085 are all now historical: nothing they decided still has code behind it.
+
+---
+
+### D-087 · The hero is vercel-labs/vgpu's own mesh pipeline, ported (2026-09-07) — supersedes D-086
+
+**Context.** D-086 removed the bespoke WebGPU hero on the reasoning that vgpu ships no React component, so keeping the
+dependency would have meant keeping a hand-written pipeline. That reasoning was sound about the *package* and wrong
+about the *repository*: `vercel-labs/vgpu` carries the vgpu.sh homepage itself, and the prism is real, readable source
+at `apps/docs/app/[lang]/(home)/components/prism-background/`. There was never a component to import — but there was
+always an implementation to port, and it is the one Matias Gonzalez Fernandez's post describes.
+
+**Choice.** Port the dark pipeline from that directory, faithfully, at the tier vgpu.sh's own debug graph shows.
+
+The blog post's thesis is the whole reason this is worth doing. Every earlier Aegis hero — D-082 through D-085 — was a
+raymarcher: it integrated the fan over discrete wavelengths *per pixel*, which is why the spectrum banded into
+separate rays past a few hundred pixels and why five passes still could not fix it. vgpu solves it as geometry. The
+CPU traces the ray bundle once (`scene/optics.ts`: Snell, Fresnel, total internal reflection, Cauchy dispersion),
+connects neighbouring wavelengths into a triangle mesh (`scene/light-mesh.ts`), and the GPU only rasterizes it. The
+fan is continuous because the *mesh* is continuous, not because the sampling is dense.
+
+What was ported, and where it came from upstream:
+
+| Aegis | vercel-labs/vgpu |
+| --- | --- |
+| `scene/constants.ts` | `prism-background/types.ts` (geometry, lamp, glass, light-fade constants) |
+| `scene/optics.ts` | `prism-background/scene/optics.ts` |
+| `scene/light-mesh.ts` | `prism-background/scene/light-mesh.ts` |
+| `scene/prism-mesh.ts` | `prism-background/scene/prism-mesh.ts` |
+| `scene/camera.ts` | `prism-background/scene/camera.ts` |
+| `gpu/{pipeline,bind,render}.ts` | `prism-background/pipelines/dark/{create-graph,bind,render,targets,index}.ts` |
+| `gpu/{runtime,uniforms}.ts` | `prism-background/runtime/{resources,state,uniforms}.ts` |
+| `gpu/environment.ts` | `prism-background/environment/texture.ts` |
+| `gpu/renderer.ts` | `prism-background/renderer.ts` |
+| all 19 `shaders/*.wgsl` | the matching files under `pipelines/`, `scene/` and `environment/`, copied verbatim |
+
+**Tier.** vgpu's *low* tier, not its high one: 64 wavelengths x 12 beam slices = **23,040 vertices**, two bloom scales.
+Those are exactly the numbers the debug screenshots in the brief report, so the reference picture *is* the low tier.
+It is also the right size for a dashboard card — the high tier's 128 x 24 mesh and four bloom levels buy nothing at
+this resolution.
+
+**Deviations, all deliberate, all narrower than upstream.** vgpu's directory also carries a light-theme pipeline, a
+debug graph UI, a GPU preview host, a performance sampler, auto-quality switching, DOM-slot projection framing and a
+thumbnail entry. None of them are ported: Aegis has one theme, one tier and no debug surface. Three consequences are
+visible in the code and are the only places it differs from upstream rather than simply containing less of it:
+
+1. `glass-common.wgsl` loses the orientation-debug environment branch and its second texture binding, because nothing
+   bakes a debug map. `environment-bake.wgsl` loses the uniform that selected it.
+2. The bloom blur is the plain kernel. vgpu also ships `bloom-blur-paired.wgsl`, which reconstructs the same discrete
+   kernel with about half the fetches; at 6 and 10 taps on half- and quarter-resolution targets the saving does not
+   pay for a second shader and its CPU-side pairing math.
+3. `scene/framing.ts` is not ported, so the camera sits at a fixed `CAMERA_DISTANCE` instead of being fitted to a DOM
+   slot. The card has a fixed aspect ratio, so there is nothing to fit to.
+
+**Dependencies.** `vgpu@0.4.0` and `three@0.185.1` as dependencies, `@vgpu/wgsl@0.4.0`, `@vgpu/wgsl-std@0.4.0` and
+`@webgpu/types@~0.1.72` as devDependencies (C-E4). `three` is vgpu's declared peer and is installed explicitly rather
+than left to `auto-install-peers`; no Aegis code imports it. `@vgpu/wgsl-std` has to be a direct dependency because
+`environment.wgsl`, `dust.wgsl` and `present.wgsl` import `@vgpu/wgsl-std/color` and pnpm's isolated store would not
+otherwise resolve it from `apps/web`. The `*.wgsl` Turbopack rule and the `@vgpu/adapter-node` / `webgpu` build
+denials (D-069) come back with them.
+
+**Consequences.** C-F4 is satisfied by a fallback that is now the *same scene* rather than a different picture:
+`scene/still.ts` projects the real prism, the real lamp at the resting incidence and each module wavelength's real
+refracted heading through the resting camera, and `PrismFallback.tsx` draws that. It server-renders, so a page with no
+JavaScript still shows the picture, and the canvas cross-fades over it only once a device is actually running. A
+missing adapter resolves `"unsupported"` rather than rejecting — it is the expected case on a GPU-less VM, not an
+error — and a device lost *after* start-up stops the loop and fades the canvas back out (B-028).
+
+`next build` never validates WGSL, so `gpu/pipeline.test.ts` is the compile gate: it builds the whole graph against
+`vgpu/mock`, which resolves, links and reflects every shader and checks every `set()` against the reflected binding
+names. `scene/optics.test.ts` regenerates vgpu's own 128-row `spectral.wgsl` checkpoint from our TypeScript and
+asserts it bit for bit, which is what pins the port to the original.
+
+D-018's two-path structure is back in substance — a GPU path with a mandatory non-GPU fallback — though the fallback
+is SVG rather than Canvas 2D and the GPU path is vgpu's code rather than ours. D-069 has a subject again.

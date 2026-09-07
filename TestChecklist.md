@@ -1067,3 +1067,76 @@ visible banding at the far edge of the frame (the failure the mesh rebuild fixed
 glass with visible far facets rather than as an opaque solid (the failure in 2 AM log 28).
 
 A browser with no WebGPU adapter shows a black canvas: there is no second renderer (D-083).
+
+---
+
+## Prism hero — vgpu mesh pipeline, ported (verified 2026-09-07, Claude)
+
+Supersedes the two sections above. The hero is now `vercel-labs/vgpu`'s own dark prism pipeline (D-087), with a still
+of the same scene under it and the module legend over both.
+
+### Commands
+
+```bash
+source ~/.nvm/nvm.sh && nvm use
+
+pnpm --filter @aegis/web test        # 13 files / 78 tests
+pnpm test                            # 70 files / 392 tests (shared 5/47, web 13/78, api 52/267)
+pnpm typecheck                       # 3 packages, exit 0
+pnpm lint                            # 3 packages, --max-warnings 0, exit 0
+pnpm --filter @aegis/web build       # compiled successfully, 13 routes
+```
+
+Three test files carry the port:
+
+| File | What it holds |
+|---|---|
+| `scene/optics.test.ts` | Snell, TIR past the critical angle, Fresnel at normal incidence, the seven bands' deviation increasing monotonically red → violet over more than 10°, the pointer sweep keeping both beam boundaries on the entry face at 21 positions, and **vgpu's own 128-row `spectral.wgsl` checkpoint regenerated from our `wavelengthToBeamRgb` and asserted bit for bit** |
+| `scene/light-mesh.test.ts` | layout = **23,040 vertices**, the three draw ranges packed end to end, buffer reuse across lamp moves, flux stable to ±10 % when the spectrum is subdivided from 48 to 96 samples, and an intensity census: at the resting incidence exactly one internal segment in four is real (no bounce), at arc 0 more are real and some outgoing cells are dropped (real TIR) |
+| `gpu/pipeline.test.ts` | the whole graph built against `vgpu/mock` and **every shader compiled**, target sizing per bloom level, resize, teardown, and the two bind guards. `next build` never validates WGSL, so this is the compile gate |
+
+### Real GPU pixels
+
+Chrome's SwiftShader WebGPU adapter destroys the device the moment a **canvas** context is configured in this
+environment — reproduced with a 20-line raw-WebGPU page containing none of this project's code (2 AM log 29), headless
+and under Xvfb alike. Offscreen rendering is unaffected, so the pipeline is verified by rendering into a `target()` and
+reading the pixels back (DV-011: the Vite harness that does this is not committed; it imports `gpu/pipeline`,
+`gpu/bind` and `gpu/render` directly, renders one frame into an offscreen `rgba8unorm` target, `copyTextureToBuffer`s
+it and paints it into a 2D canvas).
+
+```bash
+google-chrome --headless=new --no-sandbox --enable-unsafe-webgpu \
+  --use-webgpu-adapter=swiftshader --remote-debugging-port=9222
+```
+
+| Case | Observed |
+|---|---|
+| 1184×498, pointer at rest | adapter ok · `rg11b10ufloat-renderable` taken · prepare 2,283 ms · **117,900 lit of 589,632 px**, 1,615 saturated, max channel 255 |
+| 1184×498, pointer top-left (arc 0) | 68,319 lit, 1,601 saturated — the fan swings down-left and the total-internal-reflection branch the mesh census predicts appears |
+| 1184×498, pointer bottom-right (arc 1) | 102,042 lit, 1,367 saturated |
+| 656×276 (mobile aspect) | 38,831 lit, 498 saturated |
+
+Zero lit pixels at any pointer position would mean the light was trapped; the mesh's `matchingTopology` guard and the
+optics test are what keep that from happening silently.
+
+Two things a metric will not catch, so check them by eye in the screenshot: the spectrum must be one continuous wash
+with no banding at the far edge (the failure the mesh approach exists to fix), and the prism must read as dark glass
+with visible bevels and far facets rather than as an opaque solid.
+
+### Browser (this VM has no WebGPU adapter, which is the point)
+
+`navigator.gpu` exists here but `requestAdapter()` returns `null`, so the still is what renders — the C-F4 path proven
+live rather than simulated.
+
+| Check | Observed |
+|---|---|
+| Console at 1440×900 | clean. A missing adapter resolves `"unsupported"` and is not logged as an error |
+| 360×760 | `documentElement.scrollWidth === clientWidth === 360` (C-F3); the legend leaves the canvas and stacks in one column beneath the picture |
+| Light theme | the card keeps its forced `.dark` palette; the seven pills stay legible |
+| Legend | seven rows, red `checkout_recovery` 660nm through magenta `nlq` 410nm, each dot the module's own `--mod-*` token and each rule that band's true spectral colour |
+| Device lost mid-session | one warning, `Prism hero lost its GPU device; showing the static scene.`, the loop stops and the still comes back (B-028) |
+
+To see the GPU path in a browser on a machine that has no adapter, launch Chrome with
+`--enable-unsafe-webgpu --use-webgpu-adapter=swiftshader` — but note the canvas-presentation limit above: the device
+will be reported lost, the renderer will fall back, and the still is what you will photograph.
+

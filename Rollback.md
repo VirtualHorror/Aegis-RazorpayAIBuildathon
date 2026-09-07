@@ -31,7 +31,7 @@
 |---|---|---|
 | System PostgreSQL via apt (D-004) | cannot run sudo / apt broken | `pnpm add -D embedded-postgres` in `apps/api`, start it in `scripts/pg-embedded.ts` on 5432 with the same roles; SQL unchanged |
 | Node 24 via nvm | nvm broken | `nvm install 22` (vitest 5 needs ≥ 22.12); `.nvmrc` → 22 |
-| Prism hero (D-086) | — | Nothing to roll back: the hero is static SVG in `PrismHero.tsx`, with no GPU path, no canvas and no runtime dependency. `vgpu` and `NEXT_PUBLIC_PRISM_MODE` were removed on 2026-09-07 |
+| Prism hero (D-087) | — | The hero degrades on its own: `PrismFallback.tsx` is server-rendered and always behind the canvas, so a machine with no `navigator.gpu`, a failed shader compile or a device lost mid-session all end at the same still of the same scene, with no reload and nothing to switch. To take the GPU path out of the product entirely, replace the `<canvas>` in `PrismStage.tsx` with nothing and drop the `useEffect`; `PrismHero`, `PrismFallback` and the legend keep working untouched |
 | OpenAI proxy / Anthropic | key invalid, proxy down | `AEGIS_LLM_PROVIDER=stub` (L3) |
 | Next.js 16 features | build issue | pin `next@16.x` exact in `apps/web/package.json`; never upgrade mid-task |
 | Sandbox / BYOK (T25) | a tenant secret or caller key misbehaves | `DELETE FROM guardrail_config WHERE key LIKE 'sandbox\_secret\_%'` returns every account to the `.env` secret (audited rows stay); L3 (`AEGIS_LLM_PROVIDER=stub`) also disables browser keys because the operator's pin outranks them; `pnpm db:migrate:down` reverts 0005 (RLS) without touching data |

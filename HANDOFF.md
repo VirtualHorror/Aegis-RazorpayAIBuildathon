@@ -132,8 +132,9 @@ Kill by PID from `ss`, never `pkill -f` (it once matched and killed the tool she
 | `apps/web/src/lib/api.ts` | Every API call. Returns a discriminated result, never throws, so pages render honest offline states |
 | `apps/web/src/lib/sse.ts` | One `EventSource` per tab shared by all hooks; owns the 1 s→10 s backoff |
 | `apps/web/src/lib/types.ts` | Wire types for every row the UI renders; a renamed API column fails typecheck here first |
-| `apps/web/src/components/prism/prismGeometry.ts` | The only source of the prism scene; both renderers consume it |
-| `apps/web/src/components/prism/PrismHero.tsx` | The whole hero: a static SVG prism, no GPU path (D-086) |
+| `apps/web/src/components/prism/scene/constants.ts` | The one source of the prism scene: geometry, lamp, glass, dispersion. The GPU path, the ray tracer and the SVG still all read it |
+| `apps/web/src/components/prism/gpu/render.ts` | The authoritative pass order, and the shortest way to understand the whole pipeline |
+| `apps/web/src/components/prism/legend.ts` | Module ↔ wavelength ↔ colour. Change it and both the canvas legend and the still change together |
 | `apps/api/src/routes/approvals.ts` | Actions, events, approvals, guardrails and the guardrail history; holds `cursorOf` (B-012) |
 | `apps/api/src/routes/sim.ts` | `/sim/run` and the dev-only `/sim/x402-sign`; not mounted in production |
 | `apps/api/src/orchestrator/projections/invoices.ts` | `merchantFloorPaise` — the fix that made the negotiator demonstrable |
@@ -157,12 +158,16 @@ type ApiResult<T> = { ok: true; status: number; data: T; headers: Headers }
                   | { ok: false; status: number; error: string; details?: string; body?: unknown; headers?: Headers };
 ```
 
-**Prism scene** (`apps/web/src/components/prism/prismGeometry.ts`):
+**Prism light mesh** (`apps/web/src/components/prism/scene/light-mesh.ts`) — the whole point of D-087: the fan is
+geometry the CPU solves once, not a per-pixel integral.
 
 ```typescript
-function prismGeometry(input: { width: number; height: number; pointer?: Point | null }): PrismScene
-// PrismScene: { triangle: [Point, Point, Point]; entry, internal, exit, specular: Segment;
-//               fanRays: { angle, module, color, from, to }[]; exitPoint: Point }
+function buildLightMesh(options: LightMeshOptions, target?: Float32Array, scratch?: number[]): LightMeshData
+// 23,040 vertices in three ranges the shader decodes from @builtin(vertex_index):
+//   white    [0, 72)          the incoming beam, one quad per beam slice
+//   internal [72, 18504)      64 wavelengths x 12 slices x 4 bounce slots inside the glass
+//   outgoing [18504, 23040)   63 wavelength intervals x 12 slices, the fan out to the wall
+// `target` and `scratch` are the runtime's own buffers: a pointer move rewrites them, never reallocates.
 ```
 
 **Merchant floor** (`apps/api/src/orchestrator/projections/invoices.ts`) — fails closed:
@@ -227,9 +232,14 @@ then switch to "3m ago"; every element using it carries `suppressHydrationWarnin
 
 ## Warnings
 
-- **WebGPU is no longer used anywhere.** Resolved on 2026-09-07 (D-086): the hero is a static SVG, `vgpu` and its
-  WGSL loader are out of the project, and there is nothing left to feature-detect or validate. This VM's null
-  `requestAdapter()` and DV-010 stopped mattering; the caveat is kept here only so the earlier handoffs read straight.
+- **WebGPU is back, and this VM cannot show it.** D-087 (2026-09-07) supersedes D-086: the hero is a port of
+  `vercel-labs/vgpu`'s own mesh pipeline, so `vgpu`, `@vgpu/wgsl`, `@vgpu/wgsl-std`, `@webgpu/types` and `three`
+  are dependencies again and the `*.wgsl` Turbopack rule is back in `next.config.ts`. `requestAdapter()` still
+  returns `null` on this machine, so what you will see in Chrome is `PrismFallback` — that is correct behaviour,
+  not a regression. Two things to know before you try to see the GPU path: `next build` never validates WGSL (the
+  gate is `gpu/pipeline.test.ts` against `vgpu/mock`), and Chrome's SwiftShader WebGPU adapter destroys the device
+  as soon as a **canvas** context is configured here, so pixels have to be read from an offscreen target
+  (`TestChecklist.md` → "Prism hero — vgpu mesh pipeline", DV-011, 2 AM log 29).
 - **The model proxy is flaky.** `gpt-5.6` and `gpt-5.4-mini` return 503; only `gpt-5.6-luna|sol|terra` complete. If
   answers start coming back degraded, probe with a `curl` to `$OPENAI_API_BASE/chat/completions` before assuming a code
   problem.
