@@ -15,7 +15,7 @@
     "lint": "eslint src --max-warnings 0"
   },
   "dependencies": {
-    "zod": "~4.5.4"
+    "zod": "~4.6.6"
   },
   "devDependencies": {
     "@types/node": "~24.9.2",
